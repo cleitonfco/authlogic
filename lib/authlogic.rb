@@ -33,7 +33,6 @@ path = File.dirname(__FILE__) + "/authlogic/"
   "acts_as_authentic/base",
 
   "session/magic_column/assigns_last_request_at",
-  "session/priority_record",
   "session/base"
 ].each do |library|
   require path + library
