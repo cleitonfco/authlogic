@@ -38,6 +38,16 @@ module Authlogic
     # Authlogic can't do anything until it is "connected" to a controller. If
     # you are using a supported framework, Authlogic takes care of this for you.
     #
+    # ActiveRecord Trickery
+    # =====================
+    #
+    # Authlogic looks like ActiveRecord, sounds like ActiveRecord, but its not
+    # ActiveRecord. That's the goal here. This is useful for the various rails
+    # helper methods such as form_for, error_messages_for, or any method that
+    # expects an ActiveRecord object. The point is to disguise the object as an
+    # ActiveRecord object so we can take advantage of the many ActiveRecord
+    # tools.
+    #
     # Callbacks
     # =========
     #
@@ -205,6 +215,8 @@ module Authlogic
     # Need Authlogic to check your own "state"? No problem, check out the hooks section
     # below. Add in a before_validation to do your own checking. The sky is the limit.
     class Base
+      extend ActiveModel::Naming
+      extend ActiveModel::Translation
       extend Authlogic::Config
       include ActiveSupport::Callbacks
 
@@ -347,6 +359,18 @@ module Authlogic
       # ====================
 
       class << self
+        # How to name the class, works JUST LIKE ActiveRecord, except it uses
+        # the following namespace:
+        #
+        #   authlogic.models.user_session
+        def human_name(*)
+          I18n.t("models.#{name.underscore}", count: 1, default: name.humanize)
+        end
+
+        def i18n_scope
+          I18n.scope
+        end
+
         # Returns true if a controller has been set and can be used properly.
         # This MUST be set before anything can be done. Similar to how
         # ActiveRecord won't allow you to do anything without establishing a DB
@@ -847,6 +871,29 @@ module Authlogic
         invalid_password == true
       end
 
+      # Don't use this yourself, this is to just trick some of the helpers
+      # since this is the method it calls.
+      def new_record?
+        new_session?
+      end
+
+      def persisted?
+        !(new_record? || destroyed?)
+      end
+
+      def destroyed?
+        record.nil?
+      end
+
+      def to_key
+        new_record? ? nil : record.to_key
+      end
+
+      # For rails >= 3.0
+      def to_model
+        self
+      end
+
       def save_record(alternate_record = nil)
         r = alternate_record || record
         if r != priority_record
@@ -973,7 +1020,6 @@ module Authlogic
         sign_cookie == true || sign_cookie == "true" || sign_cookie == "1"
       end
 
-      include ActiveRecordTrickery
       include BruteForceProtection
       include Existence
       include Klass
