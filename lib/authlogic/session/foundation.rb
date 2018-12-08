@@ -15,14 +15,6 @@ module Authlogic
 
       # :nodoc:
       module InstanceMethods
-        def inspect
-          format(
-            "#<%s: %s>",
-            self.class.name,
-            credentials.blank? ? "no credentials provided" : credentials.inspect
-          )
-        end
-
         private
 
         def build_key(last_part)

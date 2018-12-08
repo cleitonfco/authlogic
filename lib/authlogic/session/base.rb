@@ -5,23 +5,11 @@ module Authlogic
     # This is the most important class in Authlogic. You will inherit this class
     # for your own eg. `UserSession`.
     #
-    # Code is organized topically. Each topic is represented by a module. So, to
-    # learn about password-based authentication, read the `Password` module.
-    #
-    # It is common for methods (.initialize and #credentials=, for example) to
-    # be implemented in multiple mixins. Those methods will call `super`, so the
-    # order of `include`s here is important.
-    #
-    # Also, to fully understand such a method (like #credentials=) you will need
-    # to mentally combine all of its definitions. This is perhaps the primary
-    # disadvantage of topical organization using modules.
-    #
     # # Ongoing consolidation of modules
     #
-    # As described above, a chain of half-a-dozen `super`s is hard to follow.
-    # So, we are consolidating all modules into this class. When we are done,
-    # there will only be this one file. It will be quite large, but it will
-    # be easier to trace execution.
+    # We are consolidating modules into this class (inlining mixins). When we
+    # are done, there will only be this one file. It will be quite large, but it
+    # will be easier to trace execution.
     #
     # Once consolidation is complete, we hope to identify and extract
     # collaborating objects. For example, there may be a "session adapter" that
@@ -183,6 +171,14 @@ module Authlogic
         #   session.credentials = [real_user_object, priority_user_object]
         values = value.is_a?(Array) ? value : [value]
         self.priority_record = values[1] if values[1].class < ::ActiveRecord::Base
+      end
+
+      def inspect
+        format(
+          "#<%s: %s>",
+          self.class.name,
+          credentials.blank? ? "no credentials provided" : credentials.inspect
+        )
       end
 
       include Foundation
