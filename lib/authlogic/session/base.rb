@@ -17,6 +17,7 @@ module Authlogic
     # data object or a state machine will reveal itself.
     class Base
       extend Authlogic::Config
+      include ActiveSupport::Callbacks
 
       E_AC_PARAMETERS = <<~EOS
         Passing an ActionController::Parameters to Authlogic is not allowed.

@@ -82,7 +82,6 @@ module Authlogic
 
       class << self
         def included(base) #:nodoc:
-          base.send :include, ActiveSupport::Callbacks
           define_session_callbacks(base)
           define_session_callback_installation_methods(base)
         end
