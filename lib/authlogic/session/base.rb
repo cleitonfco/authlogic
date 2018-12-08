@@ -200,7 +200,6 @@ module Authlogic
           :configured_klass_methods
         )
       end
-
       attr_accessor(
         :new_session,
         :priority_record,
@@ -208,6 +207,10 @@ module Authlogic
         :single_access,
         :stale_record,
         :unauthorized_record
+      )
+      attr_writer(
+        :scope,
+        :id
       )
 
       # Public class methods
@@ -409,15 +412,9 @@ module Authlogic
       include MagicColumns
       include PerishableToken
       include Persistence
-
-      attr_writer :scope
       include Scopes
-
-      attr_writer :id
       include Id
-
       include Validation
-
       include PriorityRecord
 
       # Private class methods
