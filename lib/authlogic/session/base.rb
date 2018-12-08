@@ -1535,6 +1535,53 @@ module Authlogic
 
       private
 
+      def add_general_credentials_error
+        error_message =
+          if self.class.generalize_credentials_error_messages.is_a? String
+            self.class.generalize_credentials_error_messages
+          else
+            "#{login_field.to_s.humanize}/Password combination is not valid"
+          end
+        errors.add(
+          :base,
+          I18n.t("error_messages.general_credentials_error", default: error_message)
+        )
+      end
+
+      def add_invalid_password_error
+        if generalize_credentials_error_messages?
+          add_general_credentials_error
+        else
+          errors.add(
+            password_field,
+            I18n.t("error_messages.password_invalid", default: "is not valid")
+          )
+        end
+      end
+
+      def add_login_not_found_error
+        if generalize_credentials_error_messages?
+          add_general_credentials_error
+        else
+          errors.add(
+            login_field,
+            I18n.t("error_messages.login_not_found", default: "is not valid")
+          )
+        end
+      end
+
+      def allow_http_basic_auth?
+        self.class.allow_http_basic_auth == true
+      end
+
+      def authenticating_with_password?
+        login_field && (!send(login_field).nil? || !send("protected_#{password_field}").nil?)
+      end
+
+      def authenticating_with_unauthorized_record?
+        !unauthorized_record.nil?
+      end
+
       # Used for things like cookie_key, session_key, etc.
       # Examples:
       # - user_credentials
@@ -1545,8 +1592,82 @@ module Authlogic
         [id, scope[:id], last_part].compact.join("_")
       end
 
+      def clear_failed_login_count
+        if record.respond_to?(:failed_login_count)
+          record.failed_login_count = 0
+        end
+      end
+
+      def consecutive_failed_logins_limit
+        self.class.consecutive_failed_logins_limit
+      end
+
       def controller
         self.class.controller
+      end
+
+      def cookie_key
+        build_key(self.class.cookie_key)
+      end
+
+      # Returns an array of cookie elements. See cookie format in
+      # `generate_cookie_for_saving`. If no cookie is found, returns nil.
+      def cookie_credentials
+        cookie = cookie_jar[cookie_key]
+        cookie&.split("::")
+      end
+
+      # The third element of the cookie indicates whether the user wanted
+      # to be remembered (Actually, it's a timestamp, `remember_me_until`)
+      # See cookie format in `generate_cookie_for_saving`.
+      def cookie_credentials_remember_me?
+        !cookie_credentials.nil? && !cookie_credentials[2].nil?
+      end
+
+      def cookie_jar
+        if self.class.sign_cookie
+          controller.cookies.signed
+        else
+          controller.cookies
+        end
+      end
+
+      def configure_password_methods
+        define_login_field_methods
+        define_password_field_methods
+      end
+
+      def define_login_field_methods
+        return unless login_field
+        self.class.send(:attr_writer, login_field) unless respond_to?("#{login_field}=")
+        self.class.send(:attr_reader, login_field) unless respond_to?(login_field)
+      end
+
+      def define_password_field_methods
+        return unless password_field
+        self.class.send(:attr_writer, password_field) unless respond_to?("#{password_field}=")
+        self.class.send(:define_method, password_field) {} unless respond_to?(password_field)
+
+        # The password should not be accessible publicly. This way forms
+        # using form_for don't fill the password with the attempted
+        # password. To prevent this we just create this method that is
+        # private.
+        self.class.class_eval(
+          <<-EOS, __FILE__, __LINE__ + 1
+            private
+            def protected_#{password_field}
+              @#{password_field}
+            end
+        EOS
+        )
+      end
+
+      def destroy_cookie
+        controller.cookies.delete cookie_key, domain: controller.cookie_domain
+      end
+
+      def disable_magic_states?
+        self.class.disable_magic_states == true
       end
 
       def enforce_timeout
@@ -1554,6 +1675,100 @@ module Authlogic
           self.stale_record = record
           self.record = nil
         end
+      end
+
+      def ensure_authentication_attempted
+        if errors.empty? && attempted_record.nil?
+          errors.add(
+            :base,
+            I18n.t(
+              "error_messages.no_authentication_details",
+              default: "You did not provide any details for authentication."
+            )
+          )
+        end
+      end
+
+      def exceeded_failed_logins_limit?
+        !attempted_record.nil? &&
+          attempted_record.respond_to?(:failed_login_count) &&
+          consecutive_failed_logins_limit > 0 &&
+          attempted_record.failed_login_count &&
+          attempted_record.failed_login_count >= consecutive_failed_logins_limit
+      end
+
+      def find_by_login_method
+        self.class.find_by_login_method
+      end
+
+      def generalize_credentials_error_messages?
+        self.class.generalize_credentials_error_messages
+      end
+
+      def generate_cookie_for_saving
+        value = format(
+          "%s::%s%s",
+          record.persistence_token,
+          record.send(record.class.primary_key),
+          remember_me? ? "::#{remember_me_until.iso8601}" : ""
+        )
+        {
+          value: value,
+          expires: remember_me_until,
+          secure: secure,
+          httponly: httponly,
+          same_site: same_site,
+          domain: controller.cookie_domain
+        }
+      end
+
+      # Returns a Proc to be executed by
+      # `ActionController::HttpAuthentication::Basic` when credentials are
+      # present in the HTTP request.
+      #
+      # @api private
+      # @return Proc
+      def http_auth_login_proc
+        proc do |login, password|
+          if !login.blank? && !password.blank?
+            send("#{login_field}=", login)
+            send("#{password_field}=", password)
+            valid?
+          end
+        end
+      end
+
+      def failed_login_ban_for
+        self.class.failed_login_ban_for
+      end
+
+      def increase_failed_login_count
+        if invalid_password? && attempted_record.respond_to?(:failed_login_count)
+          attempted_record.failed_login_count ||= 0
+          attempted_record.failed_login_count += 1
+        end
+      end
+
+      def increment_login_cout
+        if record.respond_to?(:login_count)
+          record.login_count = (record.login_count.blank? ? 1 : record.login_count + 1)
+        end
+      end
+
+      def klass
+        self.class.klass
+      end
+
+      def klass_name
+        self.class.klass_name
+      end
+
+      def last_request_at_threshold
+        self.class.last_request_at_threshold
+      end
+
+      def login_field
+        self.class.login_field
       end
 
       def logout_on_timeout?
@@ -1588,51 +1803,8 @@ module Authlogic
         build_key(self.class.params_key)
       end
 
-      def persist_by_params
-        return false unless params_enabled?
-        self.unauthorized_record = search_for_record(
-          "find_by_single_access_token",
-          params_credentials
-        )
-        self.single_access = valid?
-      end
-
-      def reset_stale_state
-        self.stale_record = nil
-      end
-
-      def single_access?
-        single_access == true
-      end
-
-      def single_access_allowed_request_types
-        self.class.single_access_allowed_request_types
-      end
-
-      def cookie_key
-        build_key(self.class.cookie_key)
-      end
-
-      # Returns an array of cookie elements. See cookie format in
-      # `generate_cookie_for_saving`. If no cookie is found, returns nil.
-      def cookie_credentials
-        cookie = cookie_jar[cookie_key]
-        cookie&.split("::")
-      end
-
-      # The third element of the cookie indicates whether the user wanted
-      # to be remembered (Actually, it's a timestamp, `remember_me_until`)
-      # See cookie format in `generate_cookie_for_saving`.
-      def cookie_credentials_remember_me?
-        !cookie_credentials.nil? && !cookie_credentials[2].nil?
-      end
-
-      def cookie_jar
-        if self.class.sign_cookie
-          controller.cookies.signed
-        else
-          controller.cookies
-        end
+      def password_field
+        self.class.password_field
       end
 
       # Tries to validate the session from information in the cookie
@@ -1649,33 +1821,32 @@ module Authlogic
         end
       end
 
-      def save_cookie
-        if sign_cookie?
-          controller.cookies.signed[cookie_key] = generate_cookie_for_saving
-        else
-          controller.cookies[cookie_key] = generate_cookie_for_saving
-        end
-      end
-
-      def generate_cookie_for_saving
-        value = format(
-          "%s::%s%s",
-          record.persistence_token,
-          record.send(record.class.primary_key),
-          remember_me? ? "::#{remember_me_until.iso8601}" : ""
+      def persist_by_params
+        return false unless params_enabled?
+        self.unauthorized_record = search_for_record(
+          "find_by_single_access_token",
+          params_credentials
         )
-        {
-          value: value,
-          expires: remember_me_until,
-          secure: secure,
-          httponly: httponly,
-          same_site: same_site,
-          domain: controller.cookie_domain
-        }
+        self.single_access = valid?
       end
 
-      def destroy_cookie
-        controller.cookies.delete cookie_key, domain: controller.cookie_domain
+      def persist_by_http_auth
+        login_proc = http_auth_login_proc
+
+        if self.class.request_http_basic_auth
+          controller.authenticate_or_request_with_http_basic(
+            self.class.http_basic_auth_realm,
+            &login_proc
+          )
+        else
+          controller.authenticate_with_http_basic(&login_proc)
+        end
+
+        false
+      end
+
+      def persist_by_http_auth?
+        allow_http_basic_auth? && login_field && password_field
       end
 
       # Tries to validate the session from information in the session
@@ -1700,6 +1871,76 @@ module Authlogic
           search_for_record("find_by_persistence_token", persistence_token.to_s)
         else
           search_for_record("find_by_#{klass.primary_key}", record_id.to_s)
+        end
+      end
+
+      def reset_stale_state
+        self.stale_record = nil
+      end
+
+      def reset_perishable_token!
+        if record.respond_to?(:reset_perishable_token) &&
+            !record.disable_perishable_token_maintenance?
+          record.reset_perishable_token
+        end
+      end
+
+      # @api private
+      def required_magic_states_for(record)
+        %i[active approved confirmed].select { |state|
+          record.respond_to?("#{state}?")
+        }
+      end
+
+      def reset_failed_login_count?
+        exceeded_failed_logins_limit? && !being_brute_force_protected?
+      end
+
+      def reset_failed_login_count
+        attempted_record.failed_login_count = 0
+      end
+
+      # `args[0]` is the name of a model method, like
+      # `find_by_single_access_token` or `find_by_smart_case_login_field`.
+      def search_for_record(*args)
+        search_scope.scoping do
+          klass.send(*args)
+        end
+      end
+
+      # Returns an AR relation representing the scope of the search. The
+      # relation is either provided directly by, or defined by
+      # `find_options`.
+      def search_scope
+        if scope[:find_options].is_a?(ActiveRecord::Relation)
+          scope[:find_options]
+        else
+          conditions = scope[:find_options] && scope[:find_options][:conditions] || {}
+          klass.send(:where, conditions)
+        end
+      end
+
+      # @api private
+      def set_last_request_at
+        current_time = klass.default_timezone == :utc ? Time.now.utc : Time.now
+        MagicColumn::AssignsLastRequestAt
+          .new(current_time, record, controller, last_request_at_threshold)
+          .assign
+      end
+
+      def single_access?
+        single_access == true
+      end
+
+      def single_access_allowed_request_types
+        self.class.single_access_allowed_request_types
+      end
+
+      def save_cookie
+        if sign_cookie?
+          controller.cookies.signed[cookie_key] = generate_cookie_for_saving
+        else
+          controller.cookies[cookie_key] = generate_cookie_for_saving
         end
       end
 
@@ -1729,6 +1970,27 @@ module Authlogic
         build_key(self.class.session_key)
       end
 
+      def update_info
+        increment_login_cout
+        clear_failed_login_count
+        update_login_timestamps
+        update_login_ip_addresses
+      end
+
+      def update_login_ip_addresses
+        if record.respond_to?(:current_login_ip)
+          record.last_login_ip = record.current_login_ip if record.respond_to?(:last_login_ip)
+          record.current_login_ip = controller.request.ip
+        end
+      end
+
+      def update_login_timestamps
+        if record.respond_to?(:current_login_at)
+          record.last_login_at = record.current_login_at if record.respond_to?(:last_login_at)
+          record.current_login_at = klass.default_timezone == :utc ? Time.now.utc : Time.now
+        end
+      end
+
       def update_session
         update_session_set_persistence_token
         update_session_set_primary_key
@@ -1748,101 +2010,6 @@ module Authlogic
       # @api private
       def update_session_set_persistence_token
         controller.session[session_key] = record && record.persistence_token
-      end
-
-      # Returns a Proc to be executed by
-      # `ActionController::HttpAuthentication::Basic` when credentials are
-      # present in the HTTP request.
-      #
-      # @api private
-      # @return Proc
-      def http_auth_login_proc
-        proc do |login, password|
-          if !login.blank? && !password.blank?
-            send("#{login_field}=", login)
-            send("#{password_field}=", password)
-            valid?
-          end
-        end
-      end
-
-      def persist_by_http_auth?
-        allow_http_basic_auth? && login_field && password_field
-      end
-
-      def persist_by_http_auth
-        login_proc = http_auth_login_proc
-
-        if self.class.request_http_basic_auth
-          controller.authenticate_or_request_with_http_basic(
-            self.class.http_basic_auth_realm,
-            &login_proc
-          )
-        else
-          controller.authenticate_with_http_basic(&login_proc)
-        end
-
-        false
-      end
-
-      def allow_http_basic_auth?
-        self.class.allow_http_basic_auth == true
-      end
-
-      def add_invalid_password_error
-        if generalize_credentials_error_messages?
-          add_general_credentials_error
-        else
-          errors.add(
-            password_field,
-            I18n.t("error_messages.password_invalid", default: "is not valid")
-          )
-        end
-      end
-
-      def add_login_not_found_error
-        if generalize_credentials_error_messages?
-          add_general_credentials_error
-        else
-          errors.add(
-            login_field,
-            I18n.t("error_messages.login_not_found", default: "is not valid")
-          )
-        end
-      end
-
-      def authenticating_with_password?
-        login_field && (!send(login_field).nil? || !send("protected_#{password_field}").nil?)
-      end
-
-      def configure_password_methods
-        define_login_field_methods
-        define_password_field_methods
-      end
-
-      def define_login_field_methods
-        return unless login_field
-        self.class.send(:attr_writer, login_field) unless respond_to?("#{login_field}=")
-        self.class.send(:attr_reader, login_field) unless respond_to?(login_field)
-      end
-
-      def define_password_field_methods
-        return unless password_field
-        self.class.send(:attr_writer, password_field) unless respond_to?("#{password_field}=")
-        self.class.send(:define_method, password_field) {} unless respond_to?(password_field)
-
-        # The password should not be accessible publicly. This way forms
-        # using form_for don't fill the password with the attempted
-        # password. To prevent this we just create this method that is
-        # private.
-        self.class.class_eval(
-          <<-EOS, __FILE__, __LINE__ + 1
-            private
-            def protected_#{password_field}
-              @#{password_field}
-            end
-          EOS
-        )
       end
 
       # In keeping with the metaphor of ActiveRecord, verification of the
@@ -1887,56 +2054,8 @@ module Authlogic
         end
       end
 
-      def find_by_login_method
-        self.class.find_by_login_method
-      end
-
-      def login_field
-        self.class.login_field
-      end
-
-      def add_general_credentials_error
-        error_message =
-          if self.class.generalize_credentials_error_messages.is_a? String
-            self.class.generalize_credentials_error_messages
-          else
-            "#{login_field.to_s.humanize}/Password combination is not valid"
-          end
-        errors.add(
-          :base,
-          I18n.t("error_messages.general_credentials_error", default: error_message)
-        )
-      end
-
-      def generalize_credentials_error_messages?
-        self.class.generalize_credentials_error_messages
-      end
-
-      def password_field
-        self.class.password_field
-      end
-
-      def verify_password_method
-        self.class.verify_password_method
-      end
-
-      def authenticating_with_unauthorized_record?
-        !unauthorized_record.nil?
-      end
-
       def validate_by_unauthorized_record
         self.attempted_record = unauthorized_record
-      end
-
-      def disable_magic_states?
-        self.class.disable_magic_states == true
-      end
-
-      # @api private
-      def required_magic_states_for(record)
-        %i[active approved confirmed].select { |state|
-          record.respond_to?("#{state}?")
-        }
       end
 
       def validate_magic_states
@@ -1953,22 +2072,6 @@ module Authlogic
           return false
         end
         true
-      end
-
-      def exceeded_failed_logins_limit?
-        !attempted_record.nil? &&
-          attempted_record.respond_to?(:failed_login_count) &&
-          consecutive_failed_logins_limit > 0 &&
-          attempted_record.failed_login_count &&
-          attempted_record.failed_login_count >= consecutive_failed_logins_limit
-      end
-
-      def reset_failed_login_count?
-        exceeded_failed_logins_limit? && !being_brute_force_protected?
-      end
-
-      def reset_failed_login_count
-        attempted_record.failed_login_count = 0
       end
 
       def validate_failed_logins
@@ -1988,111 +2091,8 @@ module Authlogic
         )
       end
 
-      def consecutive_failed_logins_limit
-        self.class.consecutive_failed_logins_limit
-      end
-
-      def failed_login_ban_for
-        self.class.failed_login_ban_for
-      end
-
-      def klass
-        self.class.klass
-      end
-
-      def klass_name
-        self.class.klass_name
-      end
-
-      def clear_failed_login_count
-        if record.respond_to?(:failed_login_count)
-          record.failed_login_count = 0
-        end
-      end
-
-      def increase_failed_login_count
-        if invalid_password? && attempted_record.respond_to?(:failed_login_count)
-          attempted_record.failed_login_count ||= 0
-          attempted_record.failed_login_count += 1
-        end
-      end
-
-      def increment_login_cout
-        if record.respond_to?(:login_count)
-          record.login_count = (record.login_count.blank? ? 1 : record.login_count + 1)
-        end
-      end
-
-      def update_info
-        increment_login_cout
-        clear_failed_login_count
-        update_login_timestamps
-        update_login_ip_addresses
-      end
-
-      def update_login_ip_addresses
-        if record.respond_to?(:current_login_ip)
-          record.last_login_ip = record.current_login_ip if record.respond_to?(:last_login_ip)
-          record.current_login_ip = controller.request.ip
-        end
-      end
-
-      def update_login_timestamps
-        if record.respond_to?(:current_login_at)
-          record.last_login_at = record.current_login_at if record.respond_to?(:last_login_at)
-          record.current_login_at = klass.default_timezone == :utc ? Time.now.utc : Time.now
-        end
-      end
-
-      # @api private
-      def set_last_request_at
-        current_time = klass.default_timezone == :utc ? Time.now.utc : Time.now
-        MagicColumn::AssignsLastRequestAt
-          .new(current_time, record, controller, last_request_at_threshold)
-          .assign
-      end
-
-      def last_request_at_threshold
-        self.class.last_request_at_threshold
-      end
-
-      def reset_perishable_token!
-        if record.respond_to?(:reset_perishable_token) &&
-            !record.disable_perishable_token_maintenance?
-          record.reset_perishable_token
-        end
-      end
-
-      # `args[0]` is the name of a model method, like
-      # `find_by_single_access_token` or `find_by_smart_case_login_field`.
-      def search_for_record(*args)
-        search_scope.scoping do
-          klass.send(*args)
-        end
-      end
-
-      # Returns an AR relation representing the scope of the search. The
-      # relation is either provided directly by, or defined by
-      # `find_options`.
-      def search_scope
-        if scope[:find_options].is_a?(ActiveRecord::Relation)
-          scope[:find_options]
-        else
-          conditions = scope[:find_options] && scope[:find_options][:conditions] || {}
-          klass.send(:where, conditions)
-        end
-      end
-
-      def ensure_authentication_attempted
-        if errors.empty? && attempted_record.nil?
-          errors.add(
-            :base,
-            I18n.t(
-              "error_messages.no_authentication_details",
-              default: "You did not provide any details for authentication."
-            )
-          )
-        end
+      def verify_password_method
+        self.class.verify_password_method
       end
     end
   end
