@@ -1064,8 +1064,8 @@ module Authlogic
         end
       end
 
-      # Public instance methods
-      # =======================
+      # Constructor
+      # ===========
 
       def initialize(*args)
         @id = nil
@@ -1093,6 +1093,9 @@ module Authlogic
         self.credentials = args
       end
 
+      # Public instance methods
+      # =======================
+
       # You should use this as a place holder for any records that you find
       # during validation. The main reason for this is to allow other modules to
       # use it if needed. Take the failed_login_count feature, it needs this in
@@ -1105,36 +1108,6 @@ module Authlogic
       def attempted_record=(value)
         value = priority_record if value == priority_record # See notes in `.find`
         @attempted_record = value
-      end
-
-      # @api public
-      def errors
-        @errors ||= ::ActiveModel::Errors.new(self)
-      end
-
-      # Determines if the information you provided for authentication is valid
-      # or not. If there is a problem with the information provided errors will
-      # be added to the errors object and this method will return false.
-      def valid?
-        errors.clear
-        self.attempted_record = nil
-
-        run_callbacks(:before_validation)
-        run_callbacks(new_session? ? :before_validation_on_create : :before_validation_on_update)
-
-        # eg. `Authlogic::Session::Password.validate_by_password`
-        # This is when `attempted_record` is set.
-        run_callbacks(:validate)
-
-        ensure_authentication_attempted
-
-        if errors.empty?
-          run_callbacks(new_session? ? :after_validation_on_create : :after_validation_on_update)
-          run_callbacks(:after_validation)
-        end
-
-        save_record(attempted_record)
-        errors.empty?
       end
 
       # Returns true when the consecutive_failed_logins_limit has been
@@ -1253,6 +1226,65 @@ module Authlogic
         self.priority_record = values[1] if values[1].class < ::ActiveRecord::Base
       end
 
+      # Clears all errors and the associated record, you should call this
+      # terminate a session, thus requiring the user to authenticate again if
+      # it is needed.
+      def destroy
+        run_callbacks :before_destroy
+        save_record
+        errors.clear
+        @record = nil
+        run_callbacks :after_destroy
+        true
+      end
+
+      def destroyed?
+        record.nil?
+      end
+
+      # @api public
+      def errors
+        @errors ||= ::ActiveModel::Errors.new(self)
+      end
+
+      # If the cookie should be marked as httponly (not accessible via javascript)
+      def httponly
+        return @httponly if defined?(@httponly)
+        @httponly = self.class.httponly
+      end
+
+      # Accepts a boolean as to whether the cookie should be marked as
+      # httponly.  If true, the cookie will not be accessible from javascript
+      def httponly=(value)
+        @httponly = value
+      end
+
+      # See httponly
+      def httponly?
+        httponly == true || httponly == "true" || httponly == "1"
+      end
+
+      # Allows you to set a unique identifier for your session, so that you can
+      # have more than 1 session at a time. A good example when this might be
+      # needed is when you want to have a normal user session and a "secure"
+      # user session. The secure user session would be created only when they
+      # want to modify their billing information, or other sensitive
+      # information. Similar to me.com. This requires 2 user sessions. Just use
+      # an id for the "secure" session and you should be good.
+      #
+      # You can set the id during initialization (see initialize for more
+      # information), or as an attribute:
+      #
+      #   session.id = :my_id
+      #
+      # Just be sure and set your id before you save your session.
+      #
+      # Lastly, to retrieve your session with the id check out the find class
+      # method.
+      def id
+        @id
+      end
+
       def inspect
         format(
           "#<%s: %s>",
@@ -1269,6 +1301,12 @@ module Authlogic
       # since this is the method it calls.
       def new_record?
         new_session?
+      end
+
+      # Returns true if the session is new, meaning no action has been taken
+      # on it and a successful save has not taken place.
+      def new_session?
+        new_session != false
       end
 
       def persisted?
@@ -1300,19 +1338,6 @@ module Authlogic
         else
           false
         end
-      end
-
-      def destroyed?
-        record.nil?
-      end
-
-      def to_key
-        new_record? ? nil : record.to_key
-      end
-
-      # For rails >= 3.0
-      def to_model
-        self
       end
 
       def save_record(alternate_record = nil)
@@ -1355,6 +1380,12 @@ module Authlogic
         remember_me == true || remember_me == "true" || remember_me == "1"
       end
 
+      # Has the cookie expired due to current time being greater than remember_me_until.
+      def remember_me_expired?
+        return unless remember_me?
+        (Time.parse(cookie_credentials[2]) < Time.now)
+      end
+
       # How long to remember the user if remember_me is true. This is based on the class
       # level configuration: remember_me_for
       def remember_me_for
@@ -1367,96 +1398,6 @@ module Authlogic
       def remember_me_until
         return unless remember_me?
         remember_me_for.from_now
-      end
-
-      # Has the cookie expired due to current time being greater than remember_me_until.
-      def remember_me_expired?
-        return unless remember_me?
-        (Time.parse(cookie_credentials[2]) < Time.now)
-      end
-
-      # If the cookie should be marked as secure (SSL only)
-      def secure
-        return @secure if defined?(@secure)
-        @secure = self.class.secure
-      end
-
-      # Accepts a boolean as to whether the cookie should be marked as secure.  If true
-      # the cookie will only ever be sent over an SSL connection.
-      def secure=(value)
-        @secure = value
-      end
-
-      # See secure
-      def secure?
-        secure == true || secure == "true" || secure == "1"
-      end
-
-      # If the cookie should be marked as httponly (not accessible via javascript)
-      def httponly
-        return @httponly if defined?(@httponly)
-        @httponly = self.class.httponly
-      end
-
-      # Accepts a boolean as to whether the cookie should be marked as
-      # httponly.  If true, the cookie will not be accessible from javascript
-      def httponly=(value)
-        @httponly = value
-      end
-
-      # See httponly
-      def httponly?
-        httponly == true || httponly == "true" || httponly == "1"
-      end
-
-      # If the cookie should be marked as SameSite with 'Lax' or 'Strict' flag.
-      def same_site
-        return @same_site if defined?(@same_site)
-        @same_site = self.class.same_site(nil)
-      end
-
-      # Accepts nil, 'Lax' or 'Strict' as possible flags.
-      def same_site=(value)
-        unless VALID_SAME_SITE_VALUES.include?(value)
-          msg = "Invalid same_site value: #{value}. Valid: #{VALID_SAME_SITE_VALUES.inspect}"
-          raise ArgumentError, msg
-        end
-        @same_site = value
-      end
-
-      # If the cookie should be signed
-      def sign_cookie
-        return @sign_cookie if defined?(@sign_cookie)
-        @sign_cookie = self.class.sign_cookie
-      end
-
-      # Accepts a boolean as to whether the cookie should be signed.  If true
-      # the cookie will be saved and verified using a signature.
-      def sign_cookie=(value)
-        @sign_cookie = value
-      end
-
-      # See sign_cookie
-      def sign_cookie?
-        sign_cookie == true || sign_cookie == "true" || sign_cookie == "1"
-      end
-
-      # Clears all errors and the associated record, you should call this
-      # terminate a session, thus requiring the user to authenticate again if
-      # it is needed.
-      def destroy
-        run_callbacks :before_destroy
-        save_record
-        errors.clear
-        @record = nil
-        run_callbacks :after_destroy
-        true
-      end
-
-      # Returns true if the session is new, meaning no action has been taken
-      # on it and a successful save has not taken place.
-      def new_session?
-        new_session != false
       end
 
       # After you have specified all of the details for your session you can
@@ -1493,30 +1434,92 @@ module Authlogic
         result
       end
 
+      # If the cookie should be marked as secure (SSL only)
+      def secure
+        return @secure if defined?(@secure)
+        @secure = self.class.secure
+      end
+
+      # Accepts a boolean as to whether the cookie should be marked as secure.  If true
+      # the cookie will only ever be sent over an SSL connection.
+      def secure=(value)
+        @secure = value
+      end
+
+      # See secure
+      def secure?
+        secure == true || secure == "true" || secure == "1"
+      end
+
+      # If the cookie should be marked as SameSite with 'Lax' or 'Strict' flag.
+      def same_site
+        return @same_site if defined?(@same_site)
+        @same_site = self.class.same_site(nil)
+      end
+
+      # Accepts nil, 'Lax' or 'Strict' as possible flags.
+      def same_site=(value)
+        unless VALID_SAME_SITE_VALUES.include?(value)
+          msg = "Invalid same_site value: #{value}. Valid: #{VALID_SAME_SITE_VALUES.inspect}"
+          raise ArgumentError, msg
+        end
+        @same_site = value
+      end
+
+      # If the cookie should be signed
+      def sign_cookie
+        return @sign_cookie if defined?(@sign_cookie)
+        @sign_cookie = self.class.sign_cookie
+      end
+
+      # Accepts a boolean as to whether the cookie should be signed.  If true
+      # the cookie will be saved and verified using a signature.
+      def sign_cookie=(value)
+        @sign_cookie = value
+      end
+
+      # See sign_cookie
+      def sign_cookie?
+        sign_cookie == true || sign_cookie == "true" || sign_cookie == "1"
+      end
+
       # The scope of the current object
       def scope
         @scope ||= {}
       end
 
-      # Allows you to set a unique identifier for your session, so that you can
-      # have more than 1 session at a time. A good example when this might be
-      # needed is when you want to have a normal user session and a "secure"
-      # user session. The secure user session would be created only when they
-      # want to modify their billing information, or other sensitive
-      # information. Similar to me.com. This requires 2 user sessions. Just use
-      # an id for the "secure" session and you should be good.
-      #
-      # You can set the id during initialization (see initialize for more
-      # information), or as an attribute:
-      #
-      #   session.id = :my_id
-      #
-      # Just be sure and set your id before you save your session.
-      #
-      # Lastly, to retrieve your session with the id check out the find class
-      # method.
-      def id
-        @id
+      def to_key
+        new_record? ? nil : record.to_key
+      end
+
+      # For rails >= 3.0
+      def to_model
+        self
+      end
+
+      # Determines if the information you provided for authentication is valid
+      # or not. If there is a problem with the information provided errors will
+      # be added to the errors object and this method will return false.
+      def valid?
+        errors.clear
+        self.attempted_record = nil
+
+        run_callbacks(:before_validation)
+        run_callbacks(new_session? ? :before_validation_on_create : :before_validation_on_update)
+
+        # eg. `Authlogic::Session::Password.validate_by_password`
+        # This is when `attempted_record` is set.
+        run_callbacks(:validate)
+
+        ensure_authentication_attempted
+
+        if errors.empty?
+          run_callbacks(new_session? ? :after_validation_on_create : :after_validation_on_update)
+          run_callbacks(:after_validation)
+        end
+
+        save_record(attempted_record)
+        errors.empty?
       end
 
       # Private class methods
