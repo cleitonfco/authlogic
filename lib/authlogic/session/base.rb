@@ -163,6 +163,25 @@ module Authlogic
         terminator: ->(_target, result_lambda) { result_lambda.call == true }
       )
 
+      # Accessors
+      # =========
+
+      class << self
+        attr_accessor(
+          :configured_password_methods,
+          :configured_klass_methods
+        )
+      end
+
+      attr_accessor(
+        :new_session,
+        :priority_record,
+        :record,
+        :single_access,
+        :stale_record,
+        :unauthorized_record
+      )
+
       # Public class methods
       # ====================
 
@@ -349,13 +368,11 @@ module Authlogic
       # Included first so that the session resets itself to nil
       before_persisting :reset_stale_state
       after_persisting :enforce_timeout
-      attr_accessor :stale_record
       include Timeout
 
       # The next four modules are included in a specific order so they are
       # tried in this order when persisting
 
-      attr_accessor :single_access
       persist :persist_by_params
       include Params
 
@@ -377,12 +394,8 @@ module Authlogic
       # states gets run after a record is found.
 
       validate :validate_by_password, if: :authenticating_with_password?
-      class << self
-        attr_accessor :configured_password_methods
-      end
       include Password
 
-      attr_accessor :unauthorized_record
       validate(
         :validate_by_unauthorized_record,
         if: :authenticating_with_unauthorized_record?
@@ -399,12 +412,8 @@ module Authlogic
       validate :validate_failed_logins, if: :being_brute_force_protected?
       include BruteForceProtection
 
-      attr_accessor :new_session, :record
       include Existence
 
-      class << self
-        attr_accessor :configured_klass_methods
-      end
       include Klass
 
       after_persisting :set_last_request_at
@@ -426,7 +435,6 @@ module Authlogic
 
       include Validation
 
-      attr_accessor :priority_record
       include PriorityRecord
 
       # Private class methods
