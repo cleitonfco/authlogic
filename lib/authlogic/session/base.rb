@@ -462,6 +462,99 @@ module Authlogic
       # ====================
 
       class << self
+        # Returns true if a controller has been set and can be used properly.
+        # This MUST be set before anything can be done. Similar to how
+        # ActiveRecord won't allow you to do anything without establishing a DB
+        # connection. In your framework environment this is done for you, but if
+        # you are using Authlogic outside of your framework, you need to assign
+        # a controller object to Authlogic via
+        # Authlogic::Session::Base.controller = obj. See the controller= method
+        # for more information.
+        def activated?
+          !controller.nil?
+        end
+
+        # Do you want to allow your users to log in via HTTP basic auth?
+        #
+        # I recommend keeping this enabled. The only time I feel this should be
+        # disabled is if you are not comfortable having your users provide their
+        # raw username and password. Whatever the reason, you can disable it
+        # here.
+        #
+        # * <tt>Default:</tt> true
+        # * <tt>Accepts:</tt> Boolean
+        def allow_http_basic_auth(value = nil)
+          rw_config(:allow_http_basic_auth, value, false)
+        end
+        alias allow_http_basic_auth= allow_http_basic_auth
+
+        # Lets you change which model to use for authentication.
+        #
+        # * <tt>Default:</tt> inferred from the class name. UserSession would
+        #   automatically try User
+        # * <tt>Accepts:</tt> an ActiveRecord class
+        def authenticate_with(klass)
+          @klass_name = klass.name
+          @klass = klass
+        end
+        alias authenticate_with= authenticate_with
+
+        # The current controller object
+        def controller
+          RequestStore.store[:authlogic_controller]
+        end
+
+        # This accepts a controller object wrapped with the Authlogic controller
+        # adapter. The controller adapters close the gap between the different
+        # controllers in each framework. That being said, Authlogic is expecting
+        # your object's class to extend
+        # Authlogic::ControllerAdapters::AbstractAdapter. See
+        # Authlogic::ControllerAdapters for more info.
+        #
+        # Lastly, this is thread safe.
+        def controller=(value)
+          RequestStore.store[:authlogic_controller] = value
+        end
+
+        # To help protect from brute force attacks you can set a limit on the
+        # allowed number of consecutive failed logins. By default this is 50,
+        # this is a very liberal number, and if someone fails to login after 50
+        # tries it should be pretty obvious that it's a machine trying to login
+        # in and very likely a brute force attack.
+        #
+        # In order to enable this field your model MUST have a
+        # failed_login_count (integer) field.
+        #
+        # If you don't know what a brute force attack is, it's when a machine
+        # tries to login into a system using every combination of character
+        # possible. Thus resulting in possibly millions of attempts to log into
+        # an account.
+        #
+        # * <tt>Default:</tt> 50
+        # * <tt>Accepts:</tt> Integer, set to 0 to disable
+        def consecutive_failed_logins_limit(value = nil)
+          rw_config(:consecutive_failed_logins_limit, value, 50)
+        end
+        alias consecutive_failed_logins_limit= consecutive_failed_logins_limit
+
+        # The name of the cookie or the key in the cookies hash. Be sure and use
+        # a unique name. If you have multiple sessions and they use the same
+        # cookie it will cause problems. Also, if a id is set it will be
+        # inserted into the beginning of the string. Example:
+        #
+        #   session = UserSession.new
+        #   session.cookie_key => "user_credentials"
+        #
+        #   session = UserSession.new(:super_high_secret)
+        #   session.cookie_key => "super_high_secret_user_credentials"
+        #
+        # * <tt>Default:</tt> "#{klass_name.underscore}_credentials"
+        # * <tt>Accepts:</tt> String
+        def cookie_key(value = nil)
+          rw_config(:cookie_key, value, "#{klass_name.underscore}_credentials")
+        end
+        alias cookie_key= cookie_key
+
         # A convenience method. The same as:
         #
         #   session = UserSession.new(*args)
@@ -483,6 +576,29 @@ module Authlogic
           session.save!
           session
         end
+
+        # Set this to true if you want to disable the checking of active?, approved?, and
+        # confirmed? on your record. This is more or less of a convenience feature, since
+        # 99% of the time if those methods exist and return false you will not want the
+        # user logging in. You could easily accomplish this same thing with a
+        # before_validation method or other callbacks.
+        #
+        # * <tt>Default:</tt> false
+        # * <tt>Accepts:</tt> Boolean
+        def disable_magic_states(value = nil)
+          rw_config(:disable_magic_states, value, false)
+        end
+        alias disable_magic_states= disable_magic_states
+
+        # Once the failed logins limit has been exceed, how long do you want to
+        # ban the user? This can be a temporary or permanent ban.
+        #
+        # * <tt>Default:</tt> 2.hours
+        # * <tt>Accepts:</tt> Fixnum, set to 0 for permanent ban
+        def failed_login_ban_for(value = nil)
+          rw_config(:failed_login_ban_for, (!value.nil? && value) || value, 2.hours.to_i)
+        end
+        alias failed_login_ban_for= failed_login_ban_for
 
         # This is how you persist a session. This finds the record for the
         # current session using a variety of methods. It basically tries to "log
@@ -554,311 +670,6 @@ module Authlogic
             session
           end
         end
-
-        # How to name the class, works JUST LIKE ActiveRecord, except it uses
-        # the following namespace:
-        #
-        #   authlogic.models.user_session
-        def human_name(*)
-          I18n.t("models.#{name.underscore}", count: 1, default: name.humanize)
-        end
-
-        def i18n_scope
-          I18n.scope
-        end
-
-        # Returns true if a controller has been set and can be used properly.
-        # This MUST be set before anything can be done. Similar to how
-        # ActiveRecord won't allow you to do anything without establishing a DB
-        # connection. In your framework environment this is done for you, but if
-        # you are using Authlogic outside of your framework, you need to assign
-        # a controller object to Authlogic via
-        # Authlogic::Session::Base.controller = obj. See the controller= method
-        # for more information.
-        def activated?
-          !controller.nil?
-        end
-
-        # This accepts a controller object wrapped with the Authlogic controller
-        # adapter. The controller adapters close the gap between the different
-        # controllers in each framework. That being said, Authlogic is expecting
-        # your object's class to extend
-        # Authlogic::ControllerAdapters::AbstractAdapter. See
-        # Authlogic::ControllerAdapters for more info.
-        #
-        # Lastly, this is thread safe.
-        def controller=(value)
-          RequestStore.store[:authlogic_controller] = value
-        end
-
-        # The current controller object
-        def controller
-          RequestStore.store[:authlogic_controller]
-        end
-
-        # Set this to true if you want to disable the checking of active?, approved?, and
-        # confirmed? on your record. This is more or less of a convenience feature, since
-        # 99% of the time if those methods exist and return false you will not want the
-        # user logging in. You could easily accomplish this same thing with a
-        # before_validation method or other callbacks.
-        #
-        # * <tt>Default:</tt> false
-        # * <tt>Accepts:</tt> Boolean
-        def disable_magic_states(value = nil)
-          rw_config(:disable_magic_states, value, false)
-        end
-        alias disable_magic_states= disable_magic_states
-
-        # The name of the cookie or the key in the cookies hash. Be sure and use
-        # a unique name. If you have multiple sessions and they use the same
-        # cookie it will cause problems. Also, if a id is set it will be
-        # inserted into the beginning of the string. Example:
-        #
-        #   session = UserSession.new
-        #   session.cookie_key => "user_credentials"
-        #
-        #   session = UserSession.new(:super_high_secret)
-        #   session.cookie_key => "super_high_secret_user_credentials"
-        #
-        # * <tt>Default:</tt> "#{klass_name.underscore}_credentials"
-        # * <tt>Accepts:</tt> String
-        def cookie_key(value = nil)
-          rw_config(:cookie_key, value, "#{klass_name.underscore}_credentials")
-        end
-        alias cookie_key= cookie_key
-
-        # To help protect from brute force attacks you can set a limit on the
-        # allowed number of consecutive failed logins. By default this is 50,
-        # this is a very liberal number, and if someone fails to login after 50
-        # tries it should be pretty obvious that it's a machine trying to login
-        # in and very likely a brute force attack.
-        #
-        # In order to enable this field your model MUST have a
-        # failed_login_count (integer) field.
-        #
-        # If you don't know what a brute force attack is, it's when a machine
-        # tries to login into a system using every combination of character
-        # possible. Thus resulting in possibly millions of attempts to log into
-        # an account.
-        #
-        # * <tt>Default:</tt> 50
-        # * <tt>Accepts:</tt> Integer, set to 0 to disable
-        def consecutive_failed_logins_limit(value = nil)
-          rw_config(:consecutive_failed_logins_limit, value, 50)
-        end
-        alias consecutive_failed_logins_limit= consecutive_failed_logins_limit
-
-        # Once the failed logins limit has been exceed, how long do you want to
-        # ban the user? This can be a temporary or permanent ban.
-        #
-        # * <tt>Default:</tt> 2.hours
-        # * <tt>Accepts:</tt> Fixnum, set to 0 for permanent ban
-        def failed_login_ban_for(value = nil)
-          rw_config(:failed_login_ban_for, (!value.nil? && value) || value, 2.hours.to_i)
-        end
-        alias failed_login_ban_for= failed_login_ban_for
-
-        # Every time a session is found the last_request_at field for that record is
-        # updated with the current time, if that field exists. If you want to limit how
-        # frequent that field is updated specify the threshold here. For example, if your
-        # user is making a request every 5 seconds, and you feel this is too frequent, and
-        # feel a minute is a good threshold. Set this to 1.minute. Once a minute has
-        # passed in between requests the field will be updated.
-        #
-        # * <tt>Default:</tt> 0
-        # * <tt>Accepts:</tt> integer representing time in seconds
-        def last_request_at_threshold(value = nil)
-          rw_config(:last_request_at_threshold, value, 0)
-        end
-        alias last_request_at_threshold= last_request_at_threshold
-
-        # Do you want to allow your users to log in via HTTP basic auth?
-        #
-        # I recommend keeping this enabled. The only time I feel this should be
-        # disabled is if you are not comfortable having your users provide their
-        # raw username and password. Whatever the reason, you can disable it
-        # here.
-        #
-        # * <tt>Default:</tt> true
-        # * <tt>Accepts:</tt> Boolean
-        def allow_http_basic_auth(value = nil)
-          rw_config(:allow_http_basic_auth, value, false)
-        end
-        alias allow_http_basic_auth= allow_http_basic_auth
-
-        # Whether or not to request HTTP authentication
-        #
-        # If set to true and no HTTP authentication credentials are sent with
-        # the request, the Rails controller method
-        # authenticate_or_request_with_http_basic will be used and a '401
-        # Authorization Required' header will be sent with the response.  In
-        # most cases, this will cause the classic HTTP authentication popup to
-        # appear in the users browser.
-        #
-        # If set to false, the Rails controller method
-        # authenticate_with_http_basic is used and no 401 header is sent.
-        #
-        # Note: This parameter has no effect unless allow_http_basic_auth is
-        # true
-        #
-        # * <tt>Default:</tt> false
-        # * <tt>Accepts:</tt> Boolean
-        def request_http_basic_auth(value = nil)
-          rw_config(:request_http_basic_auth, value, false)
-        end
-        alias request_http_basic_auth= request_http_basic_auth
-
-        # HTTP authentication realm
-        #
-        # Sets the HTTP authentication realm.
-        #
-        # Note: This option has no effect unless request_http_basic_auth is true
-        #
-        # * <tt>Default:</tt> 'Application'
-        # * <tt>Accepts:</tt> String
-        def http_basic_auth_realm(value = nil)
-          rw_config(:http_basic_auth_realm, value, "Application")
-        end
-        alias http_basic_auth_realm= http_basic_auth_realm
-
-        # If sessions should be remembered by default or not.
-        #
-        # * <tt>Default:</tt> false
-        # * <tt>Accepts:</tt> Boolean
-        def remember_me(value = nil)
-          rw_config(:remember_me, value, false)
-        end
-        alias remember_me= remember_me
-
-        # The length of time until the cookie expires.
-        #
-        # * <tt>Default:</tt> 3.months
-        # * <tt>Accepts:</tt> Integer, length of time in seconds, such as 60 or 3.months
-        def remember_me_for(value = nil)
-          rw_config(:remember_me_for, value, 3.months)
-        end
-        alias remember_me_for= remember_me_for
-
-        # Should the cookie be set as secure?  If true, the cookie will only be sent over
-        # SSL connections
-        #
-        # * <tt>Default:</tt> true
-        # * <tt>Accepts:</tt> Boolean
-        def secure(value = nil)
-          rw_config(:secure, value, true)
-        end
-        alias secure= secure
-
-        # Should the cookie be set as httponly?  If true, the cookie will not be
-        # accessible from javascript
-        #
-        # * <tt>Default:</tt> true
-        # * <tt>Accepts:</tt> Boolean
-        def httponly(value = nil)
-          rw_config(:httponly, value, true)
-        end
-        alias httponly= httponly
-
-        # Should the cookie be prevented from being send along with cross-site
-        # requests?
-        #
-        # * <tt>Default:</tt> nil
-        # * <tt>Accepts:</tt> String, one of nil, 'Lax' or 'Strict'
-        def same_site(value = nil)
-          unless VALID_SAME_SITE_VALUES.include?(value)
-            msg = "Invalid same_site value: #{value}. Valid: #{VALID_SAME_SITE_VALUES.inspect}"
-            raise ArgumentError, msg
-          end
-          rw_config(:same_site, value)
-        end
-        alias same_site= same_site
-
-        # Should the cookie be signed? If the controller adapter supports it, this is a
-        # measure against cookie tampering.
-        def sign_cookie(value = nil)
-          if value && !controller.cookies.respond_to?(:signed)
-            raise "Signed cookies not supported with #{controller.class}!"
-          end
-          rw_config(:sign_cookie, value, false)
-        end
-        alias sign_cookie= sign_cookie
-
-        # With acts_as_authentic you get a :logged_in_timeout configuration
-        # option. If this is set, after this amount of time has passed the user
-        # will be marked as logged out. Obviously, since web based apps are on a
-        # per request basis, we have to define a time limit threshold that
-        # determines when we consider a user to be "logged out". Meaning, if
-        # they login and then leave the website, when do mark them as logged
-        # out? I recommend just using this as a fun feature on your website or
-        # reports, giving you a ballpark number of users logged in and active.
-        # This is not meant to be a dead accurate representation of a user's
-        # logged in state, since there is really no real way to do this with web
-        # based apps. Think about a user that logs in and doesn't log out. There
-        # is no action that tells you that the user isn't technically still
-        # logged in and active.
-        #
-        # That being said, you can use that feature to require a new login if
-        # their session times out. Similar to how financial sites work. Just set
-        # this option to true and if your record returns true for stale? then
-        # they will be required to log back in.
-        #
-        # Lastly, UserSession.find will still return an object if the session is
-        # stale, but you will not get a record. This allows you to determine if
-        # the user needs to log back in because their session went stale, or
-        # because they just aren't logged in. Just call
-        # current_user_session.stale? as your flag.
-        #
-        # * <tt>Default:</tt> false
-        # * <tt>Accepts:</tt> Boolean
-        def logout_on_timeout(value = nil)
-          rw_config(:logout_on_timeout, value, false)
-        end
-        alias logout_on_timeout= logout_on_timeout
-
-        # Works exactly like cookie_key, but for params. So a user can login via
-        # params just like a cookie or a session. Your URL would look like:
-        #
-        #   http://www.domain.com?user_credentials=my_single_access_key
-        #
-        # You can change the "user_credentials" key above with this
-        # configuration option. Keep in mind, just like cookie_key, if you
-        # supply an id the id will be appended to the front. Check out
-        # cookie_key for more details. Also checkout the "Single Access /
-        # Private Feeds Access" section in the README.
-        #
-        # * <tt>Default:</tt> cookie_key
-        # * <tt>Accepts:</tt> String
-        def params_key(value = nil)
-          rw_config(:params_key, value, cookie_key)
-        end
-        alias params_key= params_key
-
-        # Works exactly like cookie_key, but for sessions. See cookie_key for more info.
-        #
-        # * <tt>Default:</tt> cookie_key
-        # * <tt>Accepts:</tt> Symbol or String
-        def session_key(value = nil)
-          rw_config(:session_key, value, cookie_key)
-        end
-        alias session_key= session_key
-
-        # Authentication is allowed via a single access token, but maybe this is
-        # something you don't want for your application as a whole. Maybe this
-        # is something you only want for specific request types. Specify a list
-        # of allowed request types and single access authentication will only be
-        # allowed for the ones you specify.
-        #
-        # * <tt>Default:</tt> ["application/rss+xml", "application/atom+xml"]
-        # * <tt>Accepts:</tt> String of a request type, or :all or :any to
-        #   allow single access authentication for any and all request types
-        def single_access_allowed_request_types(value = nil)
-          rw_config(
-            :single_access_allowed_request_types,
-            value,
-            ["application/rss+xml", "application/atom+xml"]
-          )
-        end
-        alias single_access_allowed_request_types= single_access_allowed_request_types
 
         # Authlogic tries to validate the credentials passed to it. One part of
         # validation is actually finding the user and making sure it exists.
@@ -934,52 +745,40 @@ module Authlogic
         end
         alias generalize_credentials_error_messages= generalize_credentials_error_messages
 
-        # The name of the method you want Authlogic to create for storing the
-        # login / username. Keep in mind this is just for your
-        # Authlogic::Session, if you want it can be something completely
-        # different than the field in your model. So if you wanted people to
-        # login with a field called "login" and then find users by email this is
-        # completely doable. See the find_by_login_method configuration option
-        # for more details.
+        # HTTP authentication realm
         #
-        # * <tt>Default:</tt> klass.login_field || klass.email_field
-        # * <tt>Accepts:</tt> Symbol or String
-        def login_field(value = nil)
-          rw_config(:login_field, value, klass.login_field || klass.email_field)
+        # Sets the HTTP authentication realm.
+        #
+        # Note: This option has no effect unless request_http_basic_auth is true
+        #
+        # * <tt>Default:</tt> 'Application'
+        # * <tt>Accepts:</tt> String
+        def http_basic_auth_realm(value = nil)
+          rw_config(:http_basic_auth_realm, value, "Application")
         end
-        alias login_field= login_field
+        alias http_basic_auth_realm= http_basic_auth_realm
 
-        # Works exactly like login_field, but for the password instead. Returns
-        # :password if a login_field exists.
+        # Should the cookie be set as httponly?  If true, the cookie will not be
+        # accessible from javascript
         #
-        # * <tt>Default:</tt> :password
-        # * <tt>Accepts:</tt> Symbol or String
-        def password_field(value = nil)
-          rw_config(:password_field, value, login_field && :password)
+        # * <tt>Default:</tt> true
+        # * <tt>Accepts:</tt> Boolean
+        def httponly(value = nil)
+          rw_config(:httponly, value, true)
         end
-        alias password_field= password_field
+        alias httponly= httponly
 
-        # The name of the method in your model used to verify the password. This
-        # should be an instance method. It should also be prepared to accept a
-        # raw password and a crytped password.
+        # How to name the class, works JUST LIKE ActiveRecord, except it uses
+        # the following namespace:
         #
-        # * <tt>Default:</tt> "valid_password?" defined in acts_as_authentic/password.rb
-        # * <tt>Accepts:</tt> Symbol or String
-        def verify_password_method(value = nil)
-          rw_config(:verify_password_method, value, "valid_password?")
+        #   authlogic.models.user_session
+        def human_name(*)
+          I18n.t("models.#{name.underscore}", count: 1, default: name.humanize)
         end
-        alias verify_password_method= verify_password_method
 
-        # Lets you change which model to use for authentication.
-        #
-        # * <tt>Default:</tt> inferred from the class name. UserSession would
-        #   automatically try User
-        # * <tt>Accepts:</tt> an ActiveRecord class
-        def authenticate_with(klass)
-          @klass_name = klass.name
-          @klass = klass
+        def i18n_scope
+          I18n.scope
         end
-        alias authenticate_with= authenticate_with
 
         # The name of the class that this session is authenticating with. For
         # example, the UserSession class will authenticate with the User class
@@ -996,10 +795,211 @@ module Authlogic
           @klass_name = klass_name ? klass_name[0] : nil
         end
 
+        # The name of the method you want Authlogic to create for storing the
+        # login / username. Keep in mind this is just for your
+        # Authlogic::Session, if you want it can be something completely
+        # different than the field in your model. So if you wanted people to
+        # login with a field called "login" and then find users by email this is
+        # completely doable. See the find_by_login_method configuration option
+        # for more details.
+        #
+        # * <tt>Default:</tt> klass.login_field || klass.email_field
+        # * <tt>Accepts:</tt> Symbol or String
+        def login_field(value = nil)
+          rw_config(:login_field, value, klass.login_field || klass.email_field)
+        end
+        alias login_field= login_field
+
+        # With acts_as_authentic you get a :logged_in_timeout configuration
+        # option. If this is set, after this amount of time has passed the user
+        # will be marked as logged out. Obviously, since web based apps are on a
+        # per request basis, we have to define a time limit threshold that
+        # determines when we consider a user to be "logged out". Meaning, if
+        # they login and then leave the website, when do mark them as logged
+        # out? I recommend just using this as a fun feature on your website or
+        # reports, giving you a ballpark number of users logged in and active.
+        # This is not meant to be a dead accurate representation of a user's
+        # logged in state, since there is really no real way to do this with web
+        # based apps. Think about a user that logs in and doesn't log out. There
+        # is no action that tells you that the user isn't technically still
+        # logged in and active.
+        #
+        # That being said, you can use that feature to require a new login if
+        # their session times out. Similar to how financial sites work. Just set
+        # this option to true and if your record returns true for stale? then
+        # they will be required to log back in.
+        #
+        # Lastly, UserSession.find will still return an object if the session is
+        # stale, but you will not get a record. This allows you to determine if
+        # the user needs to log back in because their session went stale, or
+        # because they just aren't logged in. Just call
+        # current_user_session.stale? as your flag.
+        #
+        # * <tt>Default:</tt> false
+        # * <tt>Accepts:</tt> Boolean
+        def logout_on_timeout(value = nil)
+          rw_config(:logout_on_timeout, value, false)
+        end
+        alias logout_on_timeout= logout_on_timeout
+
+        # Every time a session is found the last_request_at field for that record is
+        # updated with the current time, if that field exists. If you want to limit how
+        # frequent that field is updated specify the threshold here. For example, if your
+        # user is making a request every 5 seconds, and you feel this is too frequent, and
+        # feel a minute is a good threshold. Set this to 1.minute. Once a minute has
+        # passed in between requests the field will be updated.
+        #
+        # * <tt>Default:</tt> 0
+        # * <tt>Accepts:</tt> integer representing time in seconds
+        def last_request_at_threshold(value = nil)
+          rw_config(:last_request_at_threshold, value, 0)
+        end
+        alias last_request_at_threshold= last_request_at_threshold
+
+        # Works exactly like cookie_key, but for params. So a user can login via
+        # params just like a cookie or a session. Your URL would look like:
+        #
+        #   http://www.domain.com?user_credentials=my_single_access_key
+        #
+        # You can change the "user_credentials" key above with this
+        # configuration option. Keep in mind, just like cookie_key, if you
+        # supply an id the id will be appended to the front. Check out
+        # cookie_key for more details. Also checkout the "Single Access /
+        # Private Feeds Access" section in the README.
+        #
+        # * <tt>Default:</tt> cookie_key
+        # * <tt>Accepts:</tt> String
+        def params_key(value = nil)
+          rw_config(:params_key, value, cookie_key)
+        end
+        alias params_key= params_key
+
+        # Works exactly like login_field, but for the password instead. Returns
+        # :password if a login_field exists.
+        #
+        # * <tt>Default:</tt> :password
+        # * <tt>Accepts:</tt> Symbol or String
+        def password_field(value = nil)
+          rw_config(:password_field, value, login_field && :password)
+        end
+        alias password_field= password_field
+
+        # Whether or not to request HTTP authentication
+        #
+        # If set to true and no HTTP authentication credentials are sent with
+        # the request, the Rails controller method
+        # authenticate_or_request_with_http_basic will be used and a '401
+        # Authorization Required' header will be sent with the response.  In
+        # most cases, this will cause the classic HTTP authentication popup to
+        # appear in the users browser.
+        #
+        # If set to false, the Rails controller method
+        # authenticate_with_http_basic is used and no 401 header is sent.
+        #
+        # Note: This parameter has no effect unless allow_http_basic_auth is
+        # true
+        #
+        # * <tt>Default:</tt> false
+        # * <tt>Accepts:</tt> Boolean
+        def request_http_basic_auth(value = nil)
+          rw_config(:request_http_basic_auth, value, false)
+        end
+        alias request_http_basic_auth= request_http_basic_auth
+
+        # If sessions should be remembered by default or not.
+        #
+        # * <tt>Default:</tt> false
+        # * <tt>Accepts:</tt> Boolean
+        def remember_me(value = nil)
+          rw_config(:remember_me, value, false)
+        end
+        alias remember_me= remember_me
+
+        # The length of time until the cookie expires.
+        #
+        # * <tt>Default:</tt> 3.months
+        # * <tt>Accepts:</tt> Integer, length of time in seconds, such as 60 or 3.months
+        def remember_me_for(value = nil)
+          rw_config(:remember_me_for, value, 3.months)
+        end
+        alias remember_me_for= remember_me_for
+
+        # Should the cookie be prevented from being send along with cross-site
+        # requests?
+        #
+        # * <tt>Default:</tt> nil
+        # * <tt>Accepts:</tt> String, one of nil, 'Lax' or 'Strict'
+        def same_site(value = nil)
+          unless VALID_SAME_SITE_VALUES.include?(value)
+            msg = "Invalid same_site value: #{value}. Valid: #{VALID_SAME_SITE_VALUES.inspect}"
+            raise ArgumentError, msg
+          end
+          rw_config(:same_site, value)
+        end
+        alias same_site= same_site
+
         # The current scope set, should be used in the block passed to with_scope.
         def scope
           RequestStore.store[:authlogic_scope]
         end
+
+        # Should the cookie be set as secure?  If true, the cookie will only be sent over
+        # SSL connections
+        #
+        # * <tt>Default:</tt> true
+        # * <tt>Accepts:</tt> Boolean
+        def secure(value = nil)
+          rw_config(:secure, value, true)
+        end
+        alias secure= secure
+
+        # Should the cookie be signed? If the controller adapter supports it, this is a
+        # measure against cookie tampering.
+        def sign_cookie(value = nil)
+          if value && !controller.cookies.respond_to?(:signed)
+            raise "Signed cookies not supported with #{controller.class}!"
+          end
+          rw_config(:sign_cookie, value, false)
+        end
+        alias sign_cookie= sign_cookie
+
+        # Works exactly like cookie_key, but for sessions. See cookie_key for more info.
+        #
+        # * <tt>Default:</tt> cookie_key
+        # * <tt>Accepts:</tt> Symbol or String
+        def session_key(value = nil)
+          rw_config(:session_key, value, cookie_key)
+        end
+        alias session_key= session_key
+
+        # Authentication is allowed via a single access token, but maybe this is
+        # something you don't want for your application as a whole. Maybe this
+        # is something you only want for specific request types. Specify a list
+        # of allowed request types and single access authentication will only be
+        # allowed for the ones you specify.
+        #
+        # * <tt>Default:</tt> ["application/rss+xml", "application/atom+xml"]
+        # * <tt>Accepts:</tt> String of a request type, or :all or :any to
+        #   allow single access authentication for any and all request types
+        def single_access_allowed_request_types(value = nil)
+          rw_config(
+            :single_access_allowed_request_types,
+            value,
+            ["application/rss+xml", "application/atom+xml"]
+          )
+        end
+        alias single_access_allowed_request_types= single_access_allowed_request_types
+
+        # The name of the method in your model used to verify the password. This
+        # should be an instance method. It should also be prepared to accept a
+        # raw password and a crytped password.
+        #
+        # * <tt>Default:</tt> "valid_password?" defined in acts_as_authentic/password.rb
+        # * <tt>Accepts:</tt> Symbol or String
+        def verify_password_method(value = nil)
+          rw_config(:verify_password_method, value, "valid_password?")
+        end
+        alias verify_password_method= verify_password_method
 
         # What with_scopes focuses on is scoping the query when finding the
         # object and the name of the cookie / session. It works very similar to
