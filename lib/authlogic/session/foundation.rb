@@ -46,12 +46,6 @@ module Authlogic
           - https://github.com/binarylogic/authlogic/pull/577
         EOS
 
-        # The credentials you passed to create your session. See credentials= for more
-        # info.
-        def credentials
-          []
-        end
-
         # Set your credentials before you save your session. There are many
         # method signatures.
         #

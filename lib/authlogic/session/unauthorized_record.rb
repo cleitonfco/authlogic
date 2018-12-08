@@ -26,17 +26,6 @@ module Authlogic
         end
       end
 
-      # Returning meaningful credentials
-      def credentials
-        if authenticating_with_unauthorized_record?
-          details = {}
-          details[:unauthorized_record] = "<protected>"
-          details
-        else
-          super
-        end
-      end
-
       # Setting the unauthorized record if it exists in the credentials passed.
       def credentials=(value)
         super

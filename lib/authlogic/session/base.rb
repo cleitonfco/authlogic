@@ -54,6 +54,26 @@ module Authlogic
         self.credentials = args
       end
 
+      # The credentials you passed to create your session. See credentials= for
+      # more info.
+      def credentials
+        if authenticating_with_unauthorized_record?
+          # Returning meaningful credentials
+          details = {}
+          details[:unauthorized_record] = "<protected>"
+          details
+        elsif authenticating_with_password?
+          # Returns the login_field / password_field credentials combination in
+          # hash form.
+          details = {}
+          details[login_field.to_sym] = send(login_field)
+          details[password_field.to_sym] = "<protected>"
+          details
+        else
+          []
+        end
+      end
+
       include Foundation
       include Callbacks
 

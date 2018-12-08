@@ -131,19 +131,6 @@ module Authlogic
 
       # :nodoc:
       module InstanceMethods
-        # Returns the login_field / password_field credentials combination in
-        # hash form.
-        def credentials
-          if authenticating_with_password?
-            details = {}
-            details[login_field.to_sym] = send(login_field)
-            details[password_field.to_sym] = "<protected>"
-            details
-          else
-            super
-          end
-        end
-
         # Accepts the login_field / password_field credentials combination in
         # hash form.
         #
