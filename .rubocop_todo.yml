@@ -33,3 +33,7 @@ Style/MissingRespondToMissing:
   Exclude:
     - 'lib/authlogic/controller_adapters/sinatra_adapter.rb'
     - 'lib/authlogic/test_case/mock_request.rb'
+
+Style/TrivialAccessors:
+  Exclude:
+    - 'lib/authlogic/session/base.rb'
