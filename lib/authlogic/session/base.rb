@@ -16,6 +16,8 @@ module Authlogic
     # connects this class with the existing `ControllerAdapters`. Perhaps a
     # data object or a state machine will reveal itself.
     class Base
+      extend Authlogic::Config
+
       E_AC_PARAMETERS = <<~EOS
         Passing an ActionController::Parameters to Authlogic is not allowed.
 

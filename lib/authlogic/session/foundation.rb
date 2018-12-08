@@ -8,7 +8,6 @@ module Authlogic
     module Foundation
       def self.included(klass)
         klass.class_eval do
-          extend Authlogic::Config
           include InstanceMethods
         end
       end
