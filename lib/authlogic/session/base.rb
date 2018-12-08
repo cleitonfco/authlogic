@@ -5,7 +5,8 @@ module Authlogic
     # This is the most important class in Authlogic. You will inherit this class
     # for your own eg. `UserSession`.
     #
-    # # Ongoing consolidation of modules
+    # Ongoing consolidation of modules
+    # ================================
     #
     # We are consolidating modules into this class (inlining mixins). When we
     # are done, there will only be this one file. It will be quite large, but it
@@ -15,6 +16,66 @@ module Authlogic
     # collaborating objects. For example, there may be a "session adapter" that
     # connects this class with the existing `ControllerAdapters`. Perhaps a
     # data object or a state machine will reveal itself.
+    #
+    # Callbacks
+    # =========
+    #
+    # Between these callbacks and the configuration, this is the contract between me and
+    # you to safely modify Authlogic's behavior. I will do everything I can to make sure
+    # these do not change.
+    #
+    # Check out the sub modules of Authlogic::Session. They are very concise, clear, and
+    # to the point. More importantly they use the same API that you would use to extend
+    # Authlogic. That being said, they are great examples of how to extend Authlogic and
+    # add / modify behavior to Authlogic. These modules could easily be pulled out into
+    # their own plugin and become an "add on" without any change.
+    #
+    # Now to the point of this module. Just like in ActiveRecord you have before_save,
+    # before_validation, etc. You have similar callbacks with Authlogic, see the METHODS
+    # constant below. The order of execution is as follows:
+    #
+    #   before_persisting
+    #   persist
+    #   after_persisting
+    #   [save record if record.has_changes_to_save?]
+    #
+    #   before_validation
+    #   before_validation_on_create
+    #   before_validation_on_update
+    #   validate
+    #   after_validation_on_update
+    #   after_validation_on_create
+    #   after_validation
+    #   [save record if record.has_changes_to_save?]
+    #
+    #   before_save
+    #   before_create
+    #   before_update
+    #   after_update
+    #   after_create
+    #   after_save
+    #   [save record if record.has_changes_to_save?]
+    #
+    #   before_destroy
+    #   [save record if record.has_changes_to_save?]
+    #   after_destroy
+    #
+    # Notice the "save record if has_changes_to_save" lines above. This helps with performance. If
+    # you need to make changes to the associated record, there is no need to save the
+    # record, Authlogic will do it for you. This allows multiple modules to modify the
+    # record and execute as few queries as possible.
+    #
+    # **WARNING**: unlike ActiveRecord, these callbacks must be set up on the class level:
+    #
+    #   class UserSession < Authlogic::Session::Base
+    #     before_validation :my_method
+    #     validate :another_method
+    #     # ..etc
+    #   end
+    #
+    # You can NOT define a "before_validation" method, this is bad practice and does not
+    # allow Authlogic to extend properly with multiple extensions. Please ONLY use the
+    # method above.
     class Base
       extend Authlogic::Config
       include ActiveSupport::Callbacks
@@ -49,6 +110,64 @@ module Authlogic
         - https://github.com/binarylogic/authlogic/pull/558
         - https://github.com/binarylogic/authlogic/pull/577
       EOS
+
+      # Callbacks
+      # =========
+
+      METHODS = %w[
+        before_persisting
+        persist
+        after_persisting
+        before_validation
+        before_validation_on_create
+        before_validation_on_update
+        validate
+        after_validation_on_update
+        after_validation_on_create
+        after_validation
+        before_save
+        before_create
+        before_update
+        after_update
+        after_create
+        after_save
+        before_destroy
+        after_destroy
+      ].freeze
+
+      # Defines the "callback installation methods". Other modules will use
+      # these class methods to install their callbacks. Examples:
+      #
+      # ```
+      # # session/timeout.rb, in `included`
+      # before_persisting :reset_stale_state
+      #
+      # # session/password.rb, in `included`
+      # validate :validate_by_password, if: :authenticating_with_password?
+      # ```
+      METHODS.each do |method|
+        class_eval <<-EOS, __FILE__, __LINE__ + 1
+            def self.#{method}(*filter_list, &block)
+              set_callback(:#{method}, *filter_list, &block)
+            end
+        EOS
+      end
+
+      # Defines session life cycle events that support callbacks.
+      define_callbacks(
+        *METHODS,
+        terminator: ->(_target, result_lambda) { result_lambda.call == false }
+      )
+      define_callbacks(
+        "persist",
+        terminator: ->(_target, result_lambda) { result_lambda.call == true }
+      )
+
+      # Public class methods
+      # ====================
+
+      # Public instance methods
+      # =======================
 
       def initialize(*args)
         @id = nil
@@ -193,8 +312,6 @@ module Authlogic
         end
       end
 
-      include Callbacks
-
       # Included first so that the session resets itself to nil
       include Timeout
 
@@ -222,6 +339,12 @@ module Authlogic
       include Id
       include Validation
       include PriorityRecord
+
+      # Private class methods
+      # =====================
+
+      # Private instance methods
+      # ========================
 
       private
 
