@@ -218,6 +218,16 @@ module Authlogic
     #
     # You can modify all of this behavior with the Config sub module.
     #
+    # Perishable Token
+    # ================
+    #
+    # Maintains the perishable token, which is helpful for confirming records or
+    # authorizing records to reset their password. All that this module does is
+    # reset it after a session have been saved, just keep it changing. The more
+    # it changes, the tighter the security.
+    #
+    # See Authlogic::ActsAsAuthentic::PerishableToken for more information.
+    #
     # HTTP Basic Authentication
     # =========================
     #
@@ -1235,7 +1245,6 @@ module Authlogic
         result
       end
 
-      include PerishableToken
       include Persistence
       include Scopes
       include Id
@@ -1769,6 +1778,13 @@ module Authlogic
 
       def last_request_at_threshold
         self.class.last_request_at_threshold
+      end
+
+      def reset_perishable_token!
+        if record.respond_to?(:reset_perishable_token) &&
+            !record.disable_perishable_token_maintenance?
+          record.reset_perishable_token
+        end
       end
     end
   end
