@@ -347,31 +347,86 @@ module Authlogic
       end
 
       # Included first so that the session resets itself to nil
+      before_persisting :reset_stale_state
+      after_persisting :enforce_timeout
+      attr_accessor :stale_record
       include Timeout
 
-      # Included in a specific order so they are tried in this order when persisting
+      # The next four modules are included in a specific order so they are
+      # tried in this order when persisting
+
+      attr_accessor :single_access
+      persist :persist_by_params
       include Params
+
+      persist :persist_by_cookie
+      after_save :save_cookie
+      after_destroy :destroy_cookie
       include Cookies
+
+      persist :persist_by_session
+      after_save :update_session
+      after_destroy :update_session
+      after_persisting :update_session, unless: :single_access?
       include Session
+
+      persist :persist_by_http_auth, if: :persist_by_http_auth?
       include HttpAuth
 
-      # Included in a specific order so magic states gets run after a record is found
-      # TODO: What does "magic states gets run" mean? Be specific.
+      # The next three modules are included in a specific order so magic
+      # states gets run after a record is found.
+
+      validate :validate_by_password, if: :authenticating_with_password?
+      class << self
+        attr_accessor :configured_password_methods
+      end
       include Password
+
+      attr_accessor :unauthorized_record
+      validate(
+        :validate_by_unauthorized_record,
+        if: :authenticating_with_unauthorized_record?
+      )
       include UnauthorizedRecord
+
+      validate :validate_magic_states, unless: :disable_magic_states?
       include MagicStates
 
       include Activation
       include ActiveRecordTrickery
+
+      validate :reset_failed_login_count, if: :reset_failed_login_count?
+      validate :validate_failed_logins, if: :being_brute_force_protected?
       include BruteForceProtection
+
+      attr_accessor :new_session, :record
       include Existence
+
+      class << self
+        attr_accessor :configured_klass_methods
+      end
       include Klass
+
+      after_persisting :set_last_request_at
+      validate :increase_failed_login_count
+      before_save :update_info
+      before_save :set_last_request_at
       include MagicColumns
+
+      after_save :reset_perishable_token!
       include PerishableToken
+
       include Persistence
+
+      attr_writer :scope
       include Scopes
+
+      attr_writer :id
       include Id
+
       include Validation
+
+      attr_accessor :priority_record
       include PriorityRecord
 
       # Private class methods

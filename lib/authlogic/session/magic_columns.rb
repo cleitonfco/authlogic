@@ -21,10 +21,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          after_persisting :set_last_request_at
-          validate :increase_failed_login_count
-          before_save :update_info
-          before_save :set_last_request_at
         end
       end
 

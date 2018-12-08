@@ -27,7 +27,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          validate :validate_magic_states, unless: :disable_magic_states?
         end
       end
 

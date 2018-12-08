@@ -8,11 +8,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          validate :validate_by_password, if: :authenticating_with_password?
-
-          class << self
-            attr_accessor :configured_password_methods
-          end
         end
       end
 

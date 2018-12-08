@@ -26,9 +26,6 @@ module Authlogic
       def self.included(klass)
         klass.class_eval do
           include InstanceMethods
-          before_persisting :reset_stale_state
-          after_persisting :enforce_timeout
-          attr_accessor :stale_record
         end
       end
 

@@ -16,7 +16,6 @@ module Authlogic
         klass.class_eval do
           extend ClassMethods
           include InstanceMethods
-          attr_writer :scope
         end
       end
 

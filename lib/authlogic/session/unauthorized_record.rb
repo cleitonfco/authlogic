@@ -16,16 +16,6 @@ module Authlogic
     # methods, such as OpenID. Let that method verify the identity, once it's
     # verified, pass the object and create a session.
     module UnauthorizedRecord
-      def self.included(klass)
-        klass.class_eval do
-          attr_accessor :unauthorized_record
-          validate(
-            :validate_by_unauthorized_record,
-            if: :authenticating_with_unauthorized_record?
-          )
-        end
-      end
-
       private
 
       def authenticating_with_unauthorized_record?

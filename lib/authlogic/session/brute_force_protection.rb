@@ -27,8 +27,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          validate :reset_failed_login_count, if: :reset_failed_login_count?
-          validate :validate_failed_logins, if: :being_brute_force_protected?
         end
       end
 

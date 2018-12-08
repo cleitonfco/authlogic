@@ -33,8 +33,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          attr_accessor :single_access
-          persist :persist_by_params
         end
       end
 

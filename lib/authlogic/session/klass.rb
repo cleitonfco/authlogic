@@ -8,10 +8,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-
-          class << self
-            attr_accessor :configured_klass_methods
-          end
         end
       end
 

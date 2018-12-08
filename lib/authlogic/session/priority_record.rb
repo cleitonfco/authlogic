@@ -37,17 +37,8 @@ module Authlogic
     # Our solution is to carefully pass around a single `User` instance, using
     # it for all `update` queries, thus avoiding the `StaleObjectError`.
     #
-    # TODO: Perhaps this file should be merged into `session/persistence.rb`
-    #
     # @api private
     module PriorityRecord
-      # @api private
-      def self.included(klass)
-        klass.class_eval do
-          attr_accessor :priority_record
-        end
-      end
-
       private
 
       # @api private

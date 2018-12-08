@@ -11,9 +11,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          persist :persist_by_cookie
-          after_save :save_cookie
-          after_destroy :destroy_cookie
         end
       end
 

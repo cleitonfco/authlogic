@@ -20,7 +20,6 @@ module Authlogic
         klass.class_eval do
           extend ClassMethods
           include InstanceMethods
-          attr_accessor :new_session, :record
         end
       end
 

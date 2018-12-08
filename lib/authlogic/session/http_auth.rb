@@ -15,7 +15,6 @@ module Authlogic
         klass.class_eval do
           extend Config
           include InstanceMethods
-          persist :persist_by_http_auth, if: :persist_by_http_auth?
         end
       end
 

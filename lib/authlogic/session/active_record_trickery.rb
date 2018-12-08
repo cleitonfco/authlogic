@@ -12,14 +12,6 @@ module Authlogic
       def self.included(klass)
         klass.extend ActiveModel::Naming
         klass.extend ActiveModel::Translation
-
-        # Support ActiveModel::Name#name for Rails versions before 4.0.
-        unless klass.model_name.respond_to?(:name)
-          ActiveModel::Name.module_eval do
-            alias_method :name, :to_s
-          end
-        end
-
         klass.extend ClassMethods
         klass.send(:include, InstanceMethods)
       end
