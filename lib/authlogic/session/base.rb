@@ -294,6 +294,29 @@ module Authlogic
     #
     # Need Authlogic to check your own "state"? No problem, check out the hooks section
     # below. Add in a before_validation to do your own checking. The sky is the limit.
+    #
+    # Validation
+    # ==========
+    #
+    # The errors in Authlogic work just like ActiveRecord. In fact, it uses
+    # the `ActiveModel::Errors` class. Use it the same way:
+    #
+    # ```
+    # class UserSession
+    #   validate :check_if_awesome
+    #
+    #   private
+    #
+    #   def check_if_awesome
+    #     if login && !login.include?("awesome")
+    #       errors.add(:login, "must contain awesome")
+    #     end
+    #     unless attempted_record.awesome?
+    #       errors.add(:base, "You must be awesome to log in")
+    #     end
+    #   end
+    # end
+    # ```
     class Base
       extend ActiveModel::Naming
       extend ActiveModel::Translation
@@ -1032,6 +1055,50 @@ module Authlogic
         self.credentials = args
       end
 
+      # You should use this as a place holder for any records that you find
+      # during validation. The main reason for this is to allow other modules to
+      # use it if needed. Take the failed_login_count feature, it needs this in
+      # order to increase the failed login count.
+      def attempted_record
+        @attempted_record
+      end
+
+      # See attempted_record
+      def attempted_record=(value)
+        value = priority_record if value == priority_record
+        @attempted_record = value
+      end
+
+      # @api public
+      def errors
+        @errors ||= ::ActiveModel::Errors.new(self)
+      end
+
+      # Determines if the information you provided for authentication is valid
+      # or not. If there is a problem with the information provided errors will
+      # be added to the errors object and this method will return false.
+      def valid?
+        errors.clear
+        self.attempted_record = nil
+
+        run_callbacks(:before_validation)
+        run_callbacks(new_session? ? :before_validation_on_create : :before_validation_on_update)
+
+        # eg. `Authlogic::Session::Password.validate_by_password`
+        # This is when `attempted_record` is set.
+        run_callbacks(:validate)
+
+        ensure_authentication_attempted
+
+        if errors.empty?
+          run_callbacks(new_session? ? :after_validation_on_create : :after_validation_on_update)
+          run_callbacks(:after_validation)
+        end
+
+        save_record(attempted_record)
+        errors.empty?
+      end
+
       # Returns true when the consecutive_failed_logins_limit has been
       # exceeded and is being temporarily banned. Notice the word temporary,
       # the user will not be permanently banned unless you choose to do so
@@ -1412,7 +1479,6 @@ module Authlogic
         @id
       end
 
-      include Validation
       include PriorityRecord
 
       # Private class methods
@@ -1976,6 +2042,18 @@ module Authlogic
         else
           conditions = scope[:find_options] && scope[:find_options][:conditions] || {}
           klass.send(:where, conditions)
+        end
+      end
+
+      def ensure_authentication_attempted
+        if errors.empty? && attempted_record.nil?
+          errors.add(
+            :base,
+            I18n.t(
+              "error_messages.no_authentication_details",
+              default: "You did not provide any details for authentication."
+            )
+          )
         end
       end
     end

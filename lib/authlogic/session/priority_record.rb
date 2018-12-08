@@ -39,13 +39,6 @@ module Authlogic
     #
     # @api private
     module PriorityRecord
-      private
-
-      # @api private
-      def attempted_record=(value)
-        value = priority_record if value == priority_record
-        super
-      end
     end
   end
 end
