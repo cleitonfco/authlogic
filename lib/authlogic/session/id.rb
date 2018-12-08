@@ -11,13 +11,6 @@ module Authlogic
         end
       end
 
-      # Setting the id if it is passed in the credentials.
-      def credentials=(value)
-        super
-        values = value.is_a?(Array) ? value : [value]
-        self.id = values.last if values.last.is_a?(Symbol)
-      end
-
       # Allows you to set a unique identifier for your session, so that you can
       # have more than 1 session at a time. A good example when this might be
       # needed is when you want to have a normal user session and a "secure"

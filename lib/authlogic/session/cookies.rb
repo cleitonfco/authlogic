@@ -103,21 +103,6 @@ module Authlogic
       # The methods available in an Authlogic::Session::Base object that make up
       # the cookie feature set.
       module InstanceMethods
-        # Allows you to set the remember_me option when passing credentials.
-        def credentials=(value)
-          super
-          values = value.is_a?(Array) ? value : [value]
-          case values.first
-          when Hash
-            if values.first.with_indifferent_access.key?(:remember_me)
-              self.remember_me = values.first.with_indifferent_access[:remember_me]
-            end
-          else
-            r = values.find { |val| val.is_a?(TrueClass) || val.is_a?(FalseClass) }
-            self.remember_me = r unless r.nil?
-          end
-        end
-
         # Is the cookie going to expire after the session is over, or will it stick around?
         def remember_me
           return @remember_me if defined?(@remember_me)

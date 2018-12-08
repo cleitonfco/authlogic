@@ -48,18 +48,6 @@ module Authlogic
         end
       end
 
-      # Setting priority record if it is passed. The only way it can be passed
-      # is through an array:
-      #
-      #   session.credentials = [real_user_object, priority_user_object]
-      #
-      # @api private
-      def credentials=(value)
-        super
-        values = value.is_a?(Array) ? value : [value]
-        self.priority_record = values[1] if values[1].class < ::ActiveRecord::Base
-      end
-
       private
 
       # @api private

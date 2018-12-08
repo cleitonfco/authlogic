@@ -131,29 +131,6 @@ module Authlogic
 
       # :nodoc:
       module InstanceMethods
-        # Accepts the login_field / password_field credentials combination in
-        # hash form.
-        #
-        # You must pass an actual Hash, `ActionController::Parameters` is
-        # specifically not allowed.
-        #
-        # See `Authlogic::Session::Foundation#credentials=` for an overview of
-        # all method signatures.
-        def credentials=(value)
-          super
-          values = Array.wrap(value)
-          if values.first.is_a?(Hash)
-            sliced = values
-              .first
-              .with_indifferent_access
-              .slice(login_field, password_field)
-            sliced.each do |field, val|
-              next if val.blank?
-              send("#{field}=", val)
-            end
-          end
-        end
-
         def invalid_password?
           invalid_password == true
         end

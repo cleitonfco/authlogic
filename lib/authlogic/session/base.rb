@@ -28,6 +28,37 @@ module Authlogic
     # connects this class with the existing `ControllerAdapters`. Perhaps a
     # data object or a state machine will reveal itself.
     class Base
+      E_AC_PARAMETERS = <<~EOS
+        Passing an ActionController::Parameters to Authlogic is not allowed.
+
+        In Authlogic 3, especially during the transition of rails to Strong
+        Parameters, it was common for Authlogic users to forget to `permit`
+        their params. They would pass their params into Authlogic, we'd call
+        `to_h`, and they'd be surprised when authentication failed.
+
+        In 2018, people are still making this mistake. We'd like to help them
+        and make authlogic a little simpler at the same time, so in Authlogic
+        3.7.0, we deprecated the use of ActionController::Parameters. Instead,
+        pass a plain Hash. Please replace:
+
+            UserSession.new(user_session_params)
+            UserSession.create(user_session_params)
+
+        with
+
+            UserSession.new(user_session_params.to_h)
+            UserSession.create(user_session_params.to_h)
+
+        And don't forget to `permit`!
+
+        We discussed this issue thoroughly between late 2016 and early
+        2018. Notable discussions include:
+
+        - https://github.com/binarylogic/authlogic/issues/512
+        - https://github.com/binarylogic/authlogic/pull/558
+        - https://github.com/binarylogic/authlogic/pull/577
+      EOS
+
       def initialize(*args)
         @id = nil
         self.scope = self.class.scope
@@ -72,6 +103,86 @@ module Authlogic
         else
           []
         end
+      end
+
+      # Set your credentials before you save your session. There are many
+      # method signatures.
+      #
+      # ```
+      # # A hash of credentials is most common
+      # session.credentials = { login: "foo", password: "bar", remember_me: true }
+      #
+      # # You must pass an actual Hash, `ActionController::Parameters` is
+      # # specifically not allowed.
+      #
+      # # You can pass an array of objects:
+      # session.credentials = [my_user_object, true]
+      #
+      # # If you need to set an id (see `Authlogic::Session::Id`) pass it
+      # # last. It needs be the last item in the array you pass, since the id
+      # # is something that you control yourself, it should never be set from
+      # # a hash or a form. Examples:
+      # session.credentials = [
+      #   {:login => "foo", :password => "bar", :remember_me => true},
+      #   :my_id
+      # ]
+      # session.credentials = [my_user_object, true, :my_id]
+      #
+      # # Finally, there's priority_record
+      # [{ priority_record: my_object }, :my_id]
+      # ```
+      def credentials=(value)
+        normalized = Array.wrap(value)
+        if normalized.first.class.name == "ActionController::Parameters"
+          raise TypeError, E_AC_PARAMETERS
+        end
+
+        # Allows you to set the remember_me option when passing credentials.
+        values = value.is_a?(Array) ? value : [value]
+        case values.first
+        when Hash
+          if values.first.with_indifferent_access.key?(:remember_me)
+            self.remember_me = values.first.with_indifferent_access[:remember_me]
+          end
+        else
+          r = values.find { |val| val.is_a?(TrueClass) || val.is_a?(FalseClass) }
+          self.remember_me = r unless r.nil?
+        end
+
+        # Accepts the login_field / password_field credentials combination in
+        # hash form.
+        #
+        # You must pass an actual Hash, `ActionController::Parameters` is
+        # specifically not allowed.
+        #
+        # See `Authlogic::Session::Foundation#credentials=` for an overview of
+        # all method signatures.
+        values = Array.wrap(value)
+        if values.first.is_a?(Hash)
+          sliced = values
+            .first
+            .with_indifferent_access
+            .slice(login_field, password_field)
+          sliced.each do |field, val|
+            next if val.blank?
+            send("#{field}=", val)
+          end
+        end
+
+        # Setting the unauthorized record if it exists in the credentials passed.
+        values = value.is_a?(Array) ? value : [value]
+        self.unauthorized_record = values.first if values.first.class < ::ActiveRecord::Base
+
+        # Setting the id if it is passed in the credentials.
+        values = value.is_a?(Array) ? value : [value]
+        self.id = values.last if values.last.is_a?(Symbol)
+
+        # Setting priority record if it is passed. The only way it can be passed
+        # is through an array:
+        #
+        #   session.credentials = [real_user_object, priority_user_object]
+        values = value.is_a?(Array) ? value : [value]
+        self.priority_record = values[1] if values[1].class < ::ActiveRecord::Base
       end
 
       include Foundation
