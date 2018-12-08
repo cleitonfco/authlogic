@@ -819,6 +819,32 @@ module Authlogic
           rw_config(:verify_password_method, value, "valid_password?")
         end
         alias verify_password_method= verify_password_method
+
+        # Lets you change which model to use for authentication.
+        #
+        # * <tt>Default:</tt> inferred from the class name. UserSession would
+        #   automatically try User
+        # * <tt>Accepts:</tt> an ActiveRecord class
+        def authenticate_with(klass)
+          @klass_name = klass.name
+          @klass = klass
+        end
+        alias authenticate_with= authenticate_with
+
+        # The name of the class that this session is authenticating with. For
+        # example, the UserSession class will authenticate with the User class
+        # unless you specify otherwise in your configuration. See
+        # authenticate_with for information on how to change this value.
+        def klass
+          @klass ||= klass_name ? klass_name.constantize : nil
+        end
+
+        # The string of the model name class guessed from the actual session class name.
+        def klass_name
+          return @klass_name if defined?(@klass_name)
+          @klass_name = name.scan(/(.*)Session/)[0]
+          @klass_name = klass_name ? klass_name[0] : nil
+        end
       end
 
       # Public instance methods
@@ -1177,7 +1203,6 @@ module Authlogic
         result
       end
 
-      include Klass
       include MagicColumns
       include PerishableToken
       include Persistence
@@ -1653,6 +1678,14 @@ module Authlogic
 
       def failed_login_ban_for
         self.class.failed_login_ban_for
+      end
+
+      def klass
+        self.class.klass
+      end
+
+      def klass_name
+        self.class.klass_name
       end
     end
   end
