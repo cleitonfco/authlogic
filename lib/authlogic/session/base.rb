@@ -159,6 +159,30 @@ module Authlogic
     # the record. This is particularly useful for 3rd party authentication
     # methods, such as OpenID. Let that method verify the identity, once it's
     # verified, pass the object and create a session.
+    #
+    # Magic States
+    # ============
+    #
+    # Authlogic tries to check the state of the record before creating the session. If
+    # your record responds to the following methods and any of them return false,
+    # validation will fail:
+    #
+    #   Method name           Description
+    #   active?               Is the record marked as active?
+    #   approved?             Has the record been approved?
+    #   confirmed?            Has the record been confirmed?
+    #
+    # Authlogic does nothing to define these methods for you, its up to you to define what
+    # they mean. If your object responds to these methods Authlogic will use them,
+    # otherwise they are ignored.
+    #
+    # What's neat about this is that these are checked upon any type of login. When
+    # logging in explicitly, by cookie, session, or basic http auth. So if you mark a user
+    # inactive in the middle of their session they wont be logged back in next time they
+    # refresh the page. Giving you complete control.
+    #
+    # Need Authlogic to check your own "state"? No problem, check out the hooks section
+    # below. Add in a before_validation to do your own checking. The sky is the limit.
     class Base
       extend Authlogic::Config
       include ActiveSupport::Callbacks
@@ -302,6 +326,19 @@ module Authlogic
       # ====================
 
       class << self
+        # Set this to true if you want to disable the checking of active?, approved?, and
+        # confirmed? on your record. This is more or less of a convenience feature, since
+        # 99% of the time if those methods exist and return false you will not want the
+        # user logging in. You could easily accomplish this same thing with a
+        # before_validation method or other callbacks.
+        #
+        # * <tt>Default:</tt> false
+        # * <tt>Accepts:</tt> Boolean
+        def disable_magic_states(value = nil)
+          rw_config(:disable_magic_states, value, false)
+        end
+        alias disable_magic_states= disable_magic_states
+
         # The name of the cookie or the key in the cookies hash. Be sure and use
         # a unique name. If you have multiple sessions and they use the same
         # cookie it will cause problems. Also, if a id is set it will be
@@ -886,7 +923,6 @@ module Authlogic
         sign_cookie == true || sign_cookie == "true" || sign_cookie == "1"
       end
 
-      include MagicStates
       include Activation
       include ActiveRecordTrickery
       include BruteForceProtection
@@ -1295,6 +1331,33 @@ module Authlogic
 
       def validate_by_unauthorized_record
         self.attempted_record = unauthorized_record
+      end
+
+      def disable_magic_states?
+        self.class.disable_magic_states == true
+      end
+
+      # @api private
+      def required_magic_states_for(record)
+        %i[active approved confirmed].select { |state|
+          record.respond_to?("#{state}?")
+        }
+      end
+
+      def validate_magic_states
+        return true if attempted_record.nil?
+        required_magic_states_for(attempted_record).each do |required_status|
+          next if attempted_record.send("#{required_status}?")
+          errors.add(
+            :base,
+            I18n.t(
+              "error_messages.not_#{required_status}",
+              default: "Your account is not #{required_status}"
+            )
+          )
+          return false
+        end
+        true
       end
     end
   end
