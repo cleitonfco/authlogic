@@ -135,16 +135,7 @@ module Authlogic
         after_destroy
       ].freeze
 
-      # Defines the "callback installation methods". Other modules will use
-      # these class methods to install their callbacks. Examples:
-      #
-      # ```
-      # # session/timeout.rb, in `included`
-      # before_persisting :reset_stale_state
-      #
-      # # session/password.rb, in `included`
-      # validate :validate_by_password, if: :authenticating_with_password?
-      # ```
+      # Defines the "callback installation methods" used below.
       METHODS.each do |method|
         class_eval <<-EOS, __FILE__, __LINE__ + 1
             def self.#{method}(*filter_list, &block)
@@ -162,6 +153,43 @@ module Authlogic
         "persist",
         terminator: ->(_target, result_lambda) { result_lambda.call == true }
       )
+
+      # Use the "callback installation methods" defined above
+      # -----------------------------------------------------
+
+      before_persisting :reset_stale_state
+
+      # `persist` callbacks, in order of priority
+      persist :persist_by_params
+      persist :persist_by_cookie
+      persist :persist_by_session
+      persist :persist_by_http_auth, if: :persist_by_http_auth?
+
+      after_persisting :enforce_timeout
+      after_persisting :update_session, unless: :single_access?
+      after_persisting :set_last_request_at
+
+      before_save :update_info
+      before_save :set_last_request_at
+
+      after_save :reset_perishable_token!
+      after_save :save_cookie
+      after_save :update_session
+
+      after_destroy :destroy_cookie
+      after_destroy :update_session
+
+      # `validate` callbacks, in deliberate order. For example,
+      # validate_magic_states must run *after* a record is found.
+      validate :validate_by_password, if: :authenticating_with_password?
+      validate(
+        :validate_by_unauthorized_record,
+        if: :authenticating_with_unauthorized_record?
+      )
+      validate :validate_magic_states, unless: :disable_magic_states?
+      validate :reset_failed_login_count, if: :reset_failed_login_count?
+      validate :validate_failed_logins, if: :being_brute_force_protected?
+      validate :increase_failed_login_count
 
       # Accessors
       # =========
@@ -365,66 +393,21 @@ module Authlogic
         end
       end
 
-      # Included first so that the session resets itself to nil
-      before_persisting :reset_stale_state
-      after_persisting :enforce_timeout
       include Timeout
-
-      # The next four modules are included in a specific order so they are
-      # tried in this order when persisting
-
-      persist :persist_by_params
       include Params
-
-      persist :persist_by_cookie
-      after_save :save_cookie
-      after_destroy :destroy_cookie
       include Cookies
-
-      persist :persist_by_session
-      after_save :update_session
-      after_destroy :update_session
-      after_persisting :update_session, unless: :single_access?
       include Session
-
-      persist :persist_by_http_auth, if: :persist_by_http_auth?
       include HttpAuth
-
-      # The next three modules are included in a specific order so magic
-      # states gets run after a record is found.
-
-      validate :validate_by_password, if: :authenticating_with_password?
       include Password
-
-      validate(
-        :validate_by_unauthorized_record,
-        if: :authenticating_with_unauthorized_record?
-      )
       include UnauthorizedRecord
-
-      validate :validate_magic_states, unless: :disable_magic_states?
       include MagicStates
-
       include Activation
       include ActiveRecordTrickery
-
-      validate :reset_failed_login_count, if: :reset_failed_login_count?
-      validate :validate_failed_logins, if: :being_brute_force_protected?
       include BruteForceProtection
-
       include Existence
-
       include Klass
-
-      after_persisting :set_last_request_at
-      validate :increase_failed_login_count
-      before_save :update_info
-      before_save :set_last_request_at
       include MagicColumns
-
-      after_save :reset_perishable_token!
       include PerishableToken
-
       include Persistence
 
       attr_writer :scope
