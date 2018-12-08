@@ -31,10 +31,20 @@ module Authlogic
       def initialize(*args)
         @id = nil
         self.scope = self.class.scope
+
+        # Creating an alias method for the "record" method based on the klass
+        # name, so that we can do:
+        #
+        #   session.user
+        #
+        # instead of:
+        #
+        #   session.record
         unless self.class.configured_klass_methods
           self.class.send(:alias_method, klass_name.demodulize.underscore.to_sym, :record)
           self.class.configured_klass_methods = true
         end
+
         raise NotActivatedError unless self.class.activated?
         unless self.class.configured_password_methods
           configure_password_methods
