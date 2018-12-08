@@ -1,7 +1,19 @@
 # frozen_string_literal: true
 
 module Authlogic
-  module Session # :nodoc:
+  module Session
+    module Activation
+      # :nodoc:
+      class NotActivatedError < ::StandardError
+        def initialize
+          super(
+            "You must activate the Authlogic::Session::Base.controller with " \
+                "a controller object before creating objects"
+          )
+        end
+      end
+    end
+
     # This is the most important class in Authlogic. You will inherit this class
     # for your own eg. `UserSession`.
     #
@@ -16,6 +28,15 @@ module Authlogic
     # collaborating objects. For example, there may be a "session adapter" that
     # connects this class with the existing `ControllerAdapters`. Perhaps a
     # data object or a state machine will reveal itself.
+    #
+    # Activation
+    # ==========
+    #
+    # Activating Authlogic requires that you pass it an
+    # Authlogic::ControllerAdapters::AbstractAdapter object, or a class that
+    # extends it. This is sort of like a database connection for an ORM library,
+    # Authlogic can't do anything until it is "connected" to a controller. If
+    # you are using a supported framework, Authlogic takes care of this for you.
     #
     # Callbacks
     # =========
@@ -326,6 +347,35 @@ module Authlogic
       # ====================
 
       class << self
+        # Returns true if a controller has been set and can be used properly.
+        # This MUST be set before anything can be done. Similar to how
+        # ActiveRecord won't allow you to do anything without establishing a DB
+        # connection. In your framework environment this is done for you, but if
+        # you are using Authlogic outside of your framework, you need to assign
+        # a controller object to Authlogic via
+        # Authlogic::Session::Base.controller = obj. See the controller= method
+        # for more information.
+        def activated?
+          !controller.nil?
+        end
+
+        # This accepts a controller object wrapped with the Authlogic controller
+        # adapter. The controller adapters close the gap between the different
+        # controllers in each framework. That being said, Authlogic is expecting
+        # your object's class to extend
+        # Authlogic::ControllerAdapters::AbstractAdapter. See
+        # Authlogic::ControllerAdapters for more info.
+        #
+        # Lastly, this is thread safe.
+        def controller=(value)
+          RequestStore.store[:authlogic_controller] = value
+        end
+
+        # The current controller object
+        def controller
+          RequestStore.store[:authlogic_controller]
+        end
+
         # Set this to true if you want to disable the checking of active?, approved?, and
         # confirmed? on your record. This is more or less of a convenience feature, since
         # 99% of the time if those methods exist and return false you will not want the
@@ -676,7 +726,7 @@ module Authlogic
           self.class.configured_klass_methods = true
         end
 
-        raise NotActivatedError unless self.class.activated?
+        raise Activation::NotActivatedError unless self.class.activated?
         unless self.class.configured_password_methods
           configure_password_methods
           self.class.configured_password_methods = true
@@ -923,7 +973,6 @@ module Authlogic
         sign_cookie == true || sign_cookie == "true" || sign_cookie == "1"
       end
 
-      include Activation
       include ActiveRecordTrickery
       include BruteForceProtection
       include Existence
@@ -952,6 +1001,10 @@ module Authlogic
       #   - see persistence_token_test.rb
       def build_key(last_part)
         [id, scope[:id], last_part].compact.join("_")
+      end
+
+      def controller
+        self.class.controller
       end
 
       def enforce_timeout
