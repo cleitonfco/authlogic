@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "request_store"
+
 module Authlogic
   module Session
     module Activation
@@ -239,6 +241,12 @@ module Authlogic
     # Also, if you are not comfortable letting users pass their raw username and
     # password you can always use the single access token. See
     # Authlogic::Session::Params for more info.
+    #
+    # Scopes
+    # ======
+    #
+    # Authentication can be scoped, and it's easy, you just need to define how you want to
+    # scope everything. See `.with_scope`.
     #
     # Unauthorized Record
     # ===================
@@ -920,6 +928,73 @@ module Authlogic
           @klass_name = name.scan(/(.*)Session/)[0]
           @klass_name = klass_name ? klass_name[0] : nil
         end
+
+        # The current scope set, should be used in the block passed to with_scope.
+        def scope
+          RequestStore.store[:authlogic_scope]
+        end
+
+        # What with_scopes focuses on is scoping the query when finding the
+        # object and the name of the cookie / session. It works very similar to
+        # ActiveRecord::Base#with_scopes. It accepts a hash with any of the
+        # following options:
+        #
+        # * <tt>find_options:</tt> any options you can pass into ActiveRecord::Base.find.
+        #   This is used when trying to find the record.
+        # * <tt>id:</tt> The id of the session, this gets merged with the real id. For
+        #   information ids see the id method.
+        #
+        # Here is how you use it:
+        #
+        # ```
+        # UserSession.with_scope(find_options: User.where(account_id: 2), id: "account_2") do
+        #   UserSession.find
+        # end
+        # ```
+        #
+        # Essentially what the above does is scope the searching of the object
+        # with the sql you provided. So instead of:
+        #
+        # ```
+        # User.where("login = 'ben'").first
+        # ```
+        #
+        # it would effectively be:
+        #
+        # ```
+        # User.where("login = 'ben' and account_id = 2").first
+        # ```
+        #
+        # You will also notice the :id option. This works just like the id
+        # method. It scopes your cookies. So the name of your cookie will be:
+        #
+        #   account_2_user_credentials
+        #
+        # instead of:
+        #
+        #   user_credentials
+        #
+        # What is also nifty about scoping with an :id is that it merges your
+        # id's. So if you do:
+        #
+        #   UserSession.with_scope(
+        #     find_options: { conditions: "account_id = 2"},
+        #     id: "account_2"
+        #   ) do
+        #     session = UserSession.new
+        #     session.id = :secure
+        #   end
+        #
+        # The name of your cookies will be:
+        #
+        #   secure_account_2_user_credentials
+        def with_scope(options = {})
+          raise ArgumentError, "You must provide a block" unless block_given?
+          self.scope = options
+          result = yield
+          self.scope = nil
+          result
+        end
       end
 
       # Public instance methods
@@ -1305,13 +1380,25 @@ module Authlogic
         result
       end
 
-      include Scopes
+      # The scope of the current object
+      def scope
+        @scope ||= {}
+      end
+
       include Id
       include Validation
       include PriorityRecord
 
       # Private class methods
       # =====================
+
+      class << self
+        private
+
+        def scope=(value)
+          RequestStore.store[:authlogic_scope] = value
+        end
+      end
 
       # Private instance methods
       # ========================
@@ -1843,6 +1930,26 @@ module Authlogic
         if record.respond_to?(:reset_perishable_token) &&
             !record.disable_perishable_token_maintenance?
           record.reset_perishable_token
+        end
+      end
+
+      # `args[0]` is the name of a model method, like
+      # `find_by_single_access_token` or `find_by_smart_case_login_field`.
+      def search_for_record(*args)
+        search_scope.scoping do
+          klass.send(*args)
+        end
+      end
+
+      # Returns an AR relation representing the scope of the search. The
+      # relation is either provided directly by, or defined by
+      # `find_options`.
+      def search_scope
+        if scope[:find_options].is_a?(ActiveRecord::Relation)
+          scope[:find_options]
+        else
+          conditions = scope[:find_options] && scope[:find_options][:conditions] || {}
+          klass.send(:where, conditions)
         end
       end
     end
