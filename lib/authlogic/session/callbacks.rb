@@ -131,13 +131,6 @@ module Authlogic
           end
         end
       end
-
-      def save_record(alternate_record = nil)
-        r = alternate_record || record
-        if r&.has_changes_to_save? && !r.readonly?
-          r.save_without_session_maintenance(validate: false)
-        end
-      end
     end
   end
 end

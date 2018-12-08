@@ -55,12 +55,6 @@ module Authlogic
         value = priority_record if value == priority_record
         super
       end
-
-      # @api private
-      def save_record(alternate_record = nil)
-        r = alternate_record || record
-        super if r != priority_record
-      end
     end
   end
 end

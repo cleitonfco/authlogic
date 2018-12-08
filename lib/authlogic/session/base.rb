@@ -184,6 +184,15 @@ module Authlogic
         )
       end
 
+      def save_record(alternate_record = nil)
+        r = alternate_record || record
+        if r != priority_record
+          if r&.has_changes_to_save? && !r.readonly?
+            r.save_without_session_maintenance(validate: false)
+          end
+        end
+      end
+
       include Callbacks
 
       # Included first so that the session resets itself to nil
