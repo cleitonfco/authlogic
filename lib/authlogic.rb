@@ -50,7 +50,6 @@ path = File.dirname(__FILE__) + "/authlogic/"
   "session/priority_record",
   "session/scopes",
   "session/session",
-  "session/timeout",
   "session/unauthorized_record",
   "session/validation",
   "session/base"
