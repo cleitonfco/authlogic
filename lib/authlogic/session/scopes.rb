@@ -105,11 +105,6 @@ module Authlogic
 
         private
 
-        # Used for things like cookie_key, session_key, etc.
-        def build_key(last_part)
-          [scope[:id], super].compact.join("_")
-        end
-
         # `args[0]` is the name of a model method, like
         # `find_by_single_access_token` or `find_by_smart_case_login_field`.
         def search_for_record(*args)

@@ -183,7 +183,6 @@ module Authlogic
         )
       end
 
-      include Foundation
       include Callbacks
 
       # Included first so that the session resets itself to nil
@@ -213,6 +212,18 @@ module Authlogic
       include Id
       include Validation
       include PriorityRecord
+
+      private
+
+      # Used for things like cookie_key, session_key, etc.
+      # Examples:
+      # - user_credentials
+      # - ziggity_zack_user_credentials
+      #   - ziggity_zack is an "id"
+      #   - see persistence_token_test.rb
+      def build_key(last_part)
+        [id, scope[:id], last_part].compact.join("_")
+      end
     end
   end
 end

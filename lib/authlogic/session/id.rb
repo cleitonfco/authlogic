@@ -31,13 +31,6 @@ module Authlogic
       def id
         @id
       end
-
-      private
-
-      # Used for things like cookie_key, session_key, etc.
-      def build_key(last_part)
-        [id, super].compact.join("_")
-      end
     end
   end
 end
