@@ -28,7 +28,6 @@ module Authlogic
     # connects this class with the existing `ControllerAdapters`. Perhaps a
     # data object or a state machine will reveal itself.
     class Base
-      # rubocop:disable Metrics/AbcSize
       def initialize(*args)
         @id = nil
         self.scope = self.class.scope
@@ -44,7 +43,6 @@ module Authlogic
         instance_variable_set("@#{password_field}", nil)
         self.credentials = args
       end
-      # rubocop:enable Metrics/AbcSize
 
       include Foundation
       include Callbacks
